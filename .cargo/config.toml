@@ -1,0 +1,9 @@
+[build]
+target = "xtensa-esp32s3-espidf"
+
+[env]
+ESP_IDF_SDKCONFIG_DEFAULTS = "sdkconfig.defaults"
+
+[target.xtensa-esp32s3-espidf]
+runner = "espflash flash --monitor"
+linker = "ldproxy"

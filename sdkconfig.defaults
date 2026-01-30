@@ -1,0 +1,2 @@
+# Increase main task stack for Rust std runtime
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192

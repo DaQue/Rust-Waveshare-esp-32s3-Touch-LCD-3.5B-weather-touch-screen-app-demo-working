@@ -1,0 +1,24 @@
+[package]
+name = "waveshare_s3_3p"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1"
+log = "0.4"
+env_logger = "0.11"
+
+esp-idf-sys = { version = "0.36", features = ["binstart"] }
+esp-idf-svc = "0.51"
+embedded-hal = "1"
+
+bme280 = "0.5"
+
+[build-dependencies]
+embuild = { version = "0.32", features = ["espidf"] }
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
