@@ -1,11 +1,10 @@
 use embedded_graphics::{
     mono_font::MonoTextStyle,
-    pixelcolor::Rgb565,
     prelude::*,
     primitives::{PrimitiveStyleBuilder, Rectangle},
     text::Text,
 };
-use profont::{PROFONT_24_POINT, PROFONT_18_POINT, PROFONT_14_POINT, PROFONT_12_POINT, PROFONT_10_POINT};
+use profont::{PROFONT_24_POINT, PROFONT_14_POINT, PROFONT_10_POINT};
 use crate::framebuffer::Framebuffer;
 use crate::layout::*;
 use crate::views::AppState;

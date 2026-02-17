@@ -50,7 +50,6 @@ pub const TEXT_PRIMARY: Rgb565 = rgb(232, 235, 240);
 pub const TEXT_SECONDARY: Rgb565 = rgb(225, 228, 233);
 pub const TEXT_TERTIARY: Rgb565 = rgb(188, 196, 208);
 pub const TEXT_DETAIL: Rgb565 = rgb(184, 189, 198);
-pub const TEXT_DETAIL_ALT: Rgb565 = rgb(175, 181, 191);
 pub const TEXT_CONDITION: Rgb565 = rgb(166, 208, 255);
 pub const TEXT_WEATHER: Rgb565 = rgb(214, 218, 226);
 pub const TEXT_BOTTOM: Rgb565 = rgb(140, 148, 160);
@@ -60,7 +59,6 @@ pub const TEXT_BOTTOM: Rgb565 = rgb(140, 148, 160);
 pub const SCREEN_W: i32 = 480;
 pub const SCREEN_H: i32 = 320;
 
-pub const HEADER_Y: i32 = 4;
 pub const HEADER_LINE_Y: i32 = 30;
 pub const HEADER_LINE2_Y: i32 = 34;
 
@@ -71,12 +69,7 @@ pub const CARD_RADIUS: i32 = 12;
 pub const NOW_CARD_Y: i32 = 38;
 pub const NOW_CARD_H: i32 = 140;
 pub const NOW_ICON_X: i32 = 20;
-pub const NOW_ICON_Y: i32 = 56;
-pub const NOW_ICON_SIZE: i32 = 80;
 pub const NOW_TEMP_X: i32 = 160;
-pub const NOW_TEMP_Y: i32 = 72;
-pub const NOW_TIME_X: i32 = 160;
-pub const NOW_TIME_Y: i32 = 100;
 pub const NOW_CONDITION_X: i32 = 160;
 pub const NOW_CONDITION_Y: i32 = 120;
 pub const NOW_WEATHER_X: i32 = 160;
@@ -85,7 +78,6 @@ pub const NOW_DIVIDER_Y: i32 = 184;
 pub const NOW_STATS_X: i32 = 12;
 pub const NOW_STATS_Y1: i32 = 198;
 pub const NOW_STATS_Y2: i32 = 214;
-pub const NOW_STATS_Y3: i32 = 228;
 
 // Preview cards at bottom of NOW view
 pub const PREVIEW_Y: i32 = 234;
@@ -97,7 +89,6 @@ pub const FORECAST_ROW_Y_BASE: i32 = 40;
 pub const FORECAST_ROW_STRIDE: i32 = 56;
 pub const FORECAST_ROW_H: i32 = 50;
 pub const FORECAST_ICON_X: i32 = 19;
-pub const FORECAST_ICON_SIZE: i32 = 36;
 pub const FORECAST_TITLE_X: i32 = 80;
 pub const FORECAST_DETAIL_X: i32 = 80;
 pub const FORECAST_ROWS: usize = 4;
@@ -133,6 +124,7 @@ pub fn draw_hline(fb: &mut Framebuffer, y: i32, color: Rgb565) {
 }
 
 /// Draw a filled rounded rectangle with border (card style).
+#[allow(clippy::too_many_arguments)]
 pub fn draw_card(
     fb: &mut Framebuffer,
     x: i32,

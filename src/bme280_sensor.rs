@@ -49,8 +49,8 @@ impl Bme280 {
         // Try both addresses
         for &addr in &[BME280_ADDR, BME280_ADDR_ALT] {
             let mut chip_id = [0u8];
-            if i2c.write_read(addr, &[BME280_CHIP_ID_REG], &mut chip_id, 100).is_ok() {
-                if chip_id[0] == BME280_CHIP_ID {
+            if i2c.write_read(addr, &[BME280_CHIP_ID_REG], &mut chip_id, 100).is_ok()
+                && chip_id[0] == BME280_CHIP_ID {
                     info!("BME280 found at 0x{:02X}", addr);
                     let mut sensor = Self::new_uncalibrated(addr);
                     if sensor.read_calibration(i2c).is_ok() {
@@ -58,7 +58,6 @@ impl Bme280 {
                         return Some(sensor);
                     }
                 }
-            }
         }
         warn!("BME280 not found on I2C bus");
         None
@@ -129,7 +128,7 @@ impl Bme280 {
         let adc_h = ((raw[6] as i32) << 8) | (raw[7] as i32);
 
         // Temperature compensation
-        let var1 = ((((adc_t >> 3) - ((self.dig_t1 as i32) << 1))) * (self.dig_t2 as i32)) >> 11;
+        let var1 = (((adc_t >> 3) - ((self.dig_t1 as i32) << 1)) * (self.dig_t2 as i32)) >> 11;
         let var2 = (((((adc_t >> 4) - (self.dig_t1 as i32)) * ((adc_t >> 4) - (self.dig_t1 as i32))) >> 12) * (self.dig_t3 as i32)) >> 14;
         let t_fine = var1 + var2;
         let temp_c = ((t_fine * 5 + 128) >> 8) as f32 / 100.0;
@@ -148,13 +147,14 @@ impl Bme280 {
         })
     }
 
+    #[allow(clippy::precedence)]
     fn compensate_pressure(&self, adc_p: i32, t_fine: i32) -> f32 {
         let mut var1 = (t_fine as i64) - 128000;
         let mut var2 = var1 * var1 * (self.dig_p6 as i64);
         var2 += (var1 * (self.dig_p5 as i64)) << 17;
         var2 += (self.dig_p4 as i64) << 35;
         var1 = ((var1 * var1 * (self.dig_p3 as i64)) >> 8) + ((var1 * (self.dig_p2 as i64)) << 12);
-        var1 = ((1i64 << 47) + var1) * (self.dig_p1 as i64) >> 33;
+        var1 = (((1i64 << 47) + var1) * (self.dig_p1 as i64)) >> 33;
         if var1 == 0 {
             return 0.0;
         }
@@ -179,9 +179,8 @@ impl Bme280 {
             >> 10)
             + 2097152;
         let mut var = (x1 * (((x2 * (self.dig_h2 as i64)) >> 10) + 8192)) >> 14;
-        var -= (((var >> 15) * (var >> 15)) >> 7) * (self.dig_h1 as i64) >> 4;
-        if var < 0 { var = 0; }
-        if var > 419430400 { var = 419430400; }
+        var -= ((((var >> 15) * (var >> 15)) >> 7) * (self.dig_h1 as i64)) >> 4;
+        var = var.clamp(0, 419430400);
         (var >> 12) as f32 / 1024.0
     }
 }

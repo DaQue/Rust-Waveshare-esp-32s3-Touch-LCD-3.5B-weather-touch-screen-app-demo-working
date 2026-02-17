@@ -1,6 +1,5 @@
 use embedded_graphics::{
     mono_font::MonoTextStyle,
-    pixelcolor::Rgb565,
     prelude::*,
     text::Text,
 };

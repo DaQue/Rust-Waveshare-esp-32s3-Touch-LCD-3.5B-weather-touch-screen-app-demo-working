@@ -24,7 +24,6 @@ use std::time::Duration;
 
 // ── Display geometry (physical panel is 320x480 portrait) ───────────
 const PANEL_WIDTH: i32 = 320;
-const PANEL_HEIGHT: i32 = 480;
 const CHUNK_LINES: i32 = 20;
 
 // ── SPI / QSPI ─────────────────────────────────────────────────────
@@ -39,9 +38,7 @@ const PIN_LCD_D3: i32 = 4;
 const PIN_LCD_CS: i32 = 12;
 const PIN_LCD_BL: i32 = 6;
 
-// ── I2C pins ────────────────────────────────────────────────────────
-const I2C_SDA: i32 = 8;
-const I2C_SCL: i32 = 7;
+// ── I2C ──────────────────────────────────────────────────────────────
 const I2C_FREQ_HZ: u32 = 100_000;
 
 // ── Timing ──────────────────────────────────────────────────────────
@@ -255,7 +252,7 @@ fn init_display() -> Result<LcdContext> {
     bus_cfg.__bindgen_anon_3.quadwp_io_num = PIN_LCD_D2;
     bus_cfg.__bindgen_anon_4.quadhd_io_num = PIN_LCD_D3;
     bus_cfg.sclk_io_num = PIN_LCD_SCLK;
-    bus_cfg.max_transfer_sz = (PANEL_WIDTH * CHUNK_LINES * 2) as i32;
+    bus_cfg.max_transfer_sz = PANEL_WIDTH * CHUNK_LINES * 2;
 
     let host = esp_idf_sys::spi_host_device_t_SPI2_HOST;
     esp_check(
@@ -530,11 +527,10 @@ fn main() -> Result<()> {
 
         // Poll touch
         let gesture = touch_state.poll(&mut i2c, t);
-        if gesture != touch::Gesture::None {
-            if state.handle_gesture(gesture) {
+        if gesture != touch::Gesture::None
+            && state.handle_gesture(gesture) {
                 info!("Gesture {:?} -> view {:?}", gesture, state.current_view);
             }
-        }
 
         // BME280 read
         if t.wrapping_sub(last_bme_ms) >= BME280_INTERVAL_MS {
@@ -563,7 +559,7 @@ fn main() -> Result<()> {
         }
 
         // Update time display
-        if tick_count % TIME_UPDATE_TICKS == 0 {
+        if tick_count.is_multiple_of(TIME_UPDATE_TICKS) {
             if let Some(t) = time_sync::format_local_time() {
                 if t != state.time_text {
                     state.time_text = t;

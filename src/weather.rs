@@ -23,6 +23,7 @@ pub struct CurrentWeather {
     pub condition: String,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Default)]
 pub struct ForecastRow {
     pub temp_f: i32,
@@ -34,6 +35,7 @@ pub struct ForecastRow {
     pub temp_text: String,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Default)]
 pub struct HourlyEntry {
     pub temp_f: i32,
@@ -50,6 +52,7 @@ pub struct ForecastDay {
     pub entries: Vec<HourlyEntry>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Default)]
 pub struct Forecast {
     pub rows: Vec<ForecastRow>,

@@ -1,5 +1,5 @@
 use esp_idf_hal::i2c::I2cDriver;
-use log::{info, debug};
+use log::debug;
 
 /// AXS15231B integrated touch controller at I2C address 0x3B.
 const TOUCH_ADDR: u8 = 0x3B;
@@ -58,7 +58,7 @@ impl TouchState {
         self.poll_count += 1;
 
         // Log touch stats every 50 polls (~5 seconds at 100ms tick)
-        if self.poll_count % 50 == 0 {
+        if self.poll_count.is_multiple_of(50) {
             debug!(
                 "TOUCH stats: polls={} errs={} touches={}",
                 self.poll_count, self.err_count, self.touch_count

@@ -57,7 +57,6 @@ pub struct AppState {
     pub i2c_devices: Vec<u8>,
     pub wifi_networks: Vec<(String, i8)>, // (ssid, rssi)
     pub ip_address: String,
-    pub forecast_scroll: usize,
     pub forecast_hourly_open: bool,
     pub forecast_hourly_day: usize,
     pub forecast_hourly_scroll: usize,
@@ -79,7 +78,6 @@ impl AppState {
             i2c_devices: Vec::new(),
             wifi_networks: Vec::new(),
             ip_address: String::new(),
-            forecast_scroll: 0,
             forecast_hourly_open: false,
             forecast_hourly_day: 0,
             forecast_hourly_scroll: 0,
@@ -161,13 +159,12 @@ impl AppState {
         }
 
         // Close hourly on header tap
-        if self.current_view == View::Forecast && self.forecast_hourly_open {
-            if y < 42 && x >= screen_w - 144 {
+        if self.current_view == View::Forecast && self.forecast_hourly_open
+            && y < 42 && x >= screen_w - 144 {
                 self.forecast_hourly_open = false;
                 self.dirty = true;
                 return true;
             }
-        }
 
         false
     }

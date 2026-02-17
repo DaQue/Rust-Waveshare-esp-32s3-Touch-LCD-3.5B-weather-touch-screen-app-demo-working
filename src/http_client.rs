@@ -1,9 +1,8 @@
 use anyhow::{bail, Result};
 use esp_idf_svc::http::client::{Configuration, EspHttpConnection};
-use log::{info, warn};
+use log::info;
 
 const TIMEOUT_MS: u64 = 15_000;
-const USER_AGENT: &str = "waveshare-s3-weather/1.0";
 
 /// Perform an HTTPS GET request and return the response body as a String.
 pub fn https_get(url: &str) -> Result<String> {
@@ -14,7 +13,7 @@ pub fn https_get(url: &str) -> Result<String> {
         ..Default::default()
     };
 
-    let mut connection = EspHttpConnection::new(&config)?;
+    let connection = EspHttpConnection::new(&config)?;
 
     use embedded_svc::http::client::Client;
     let mut client = Client::wrap(connection);
@@ -35,7 +34,6 @@ pub fn https_get(url: &str) -> Result<String> {
     let mut buf = [0u8; 1024];
     let mut reader = request;
     loop {
-        use embedded_svc::io::Read;
         let n = reader.read(&mut buf)?;
         if n == 0 {
             break;

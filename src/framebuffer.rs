@@ -101,7 +101,7 @@ impl Framebuffer {
         let mut py = 0i32;
         while py < ph {
             let py_end = (py + CHUNK_LINES).min(ph);
-            let rows = (py_end - py) as usize;
+            let _rows = (py_end - py) as usize;
 
             // Fill DMA buffer with rotated pixels (big-endian RGB565)
             let mut di = 0usize;
