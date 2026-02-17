@@ -1,5 +1,5 @@
 use esp_idf_hal::i2c::I2cDriver;
-use log::debug;
+use log::{info, debug};
 
 /// AXS15231B integrated touch controller at I2C address 0x3B.
 const TOUCH_ADDR: u8 = 0x3B;
@@ -58,7 +58,7 @@ impl TouchState {
         self.poll_count += 1;
 
         // Log touch stats every 50 polls (~5 seconds at 100ms tick)
-        if self.poll_count.is_multiple_of(50) {
+        if self.poll_count % 50 == 0 {
             debug!(
                 "TOUCH stats: polls={} errs={} touches={}",
                 self.poll_count, self.err_count, self.touch_count
@@ -174,7 +174,7 @@ fn read_touch(i2c: &mut I2cDriver<'_>, err_count: &mut u32, poll_count: u32) -> 
 
 /// One-time diagnostic: try multiple approaches to communicate with touch controller.
 pub fn probe(i2c: &mut I2cDriver<'_>) {
-    debug!("=== TOUCH PROBE START ===");
+    info!("=== TOUCH PROBE START ===");
 
     // Try write_read (repeated start)
     let mut data = [0u8; 14];
@@ -204,5 +204,5 @@ pub fn probe(i2c: &mut I2cDriver<'_>) {
         Err(e) => debug!("Touch bare read FAILED: {:?}", e),
     }
 
-    debug!("=== TOUCH PROBE END ===");
+    info!("=== TOUCH PROBE END ===");
 }

@@ -352,6 +352,51 @@ fn scan_i2c(i2c: &mut I2cDriver<'_>) -> Vec<u8> {
     found
 }
 
+// ── Boot splash screen ──────────────────────────────────────────────
+
+fn draw_splash(fb: &mut framebuffer::Framebuffer, status: &str) {
+    use embedded_graphics::{
+        mono_font::MonoTextStyle,
+        pixelcolor::Rgb565,
+        prelude::*,
+        text::{Alignment, Text},
+    };
+    use profont::{PROFONT_18_POINT, PROFONT_12_POINT};
+
+    let bg = layout::rgb(20, 24, 32);
+    fb.clear_color(bg);
+
+    let title_style = MonoTextStyle::new(&PROFONT_18_POINT, Rgb565::new(28, 56, 31));
+    Text::with_alignment(
+        "Weather Station",
+        Point::new(240, 120),
+        title_style,
+        Alignment::Center,
+    )
+    .draw(fb)
+    .ok();
+
+    let sub_style = MonoTextStyle::new(&PROFONT_12_POINT, Rgb565::new(18, 36, 20));
+    Text::with_alignment(
+        "Waveshare ESP32-S3 3.5B",
+        Point::new(240, 148),
+        sub_style,
+        Alignment::Center,
+    )
+    .draw(fb)
+    .ok();
+
+    let status_style = MonoTextStyle::new(&PROFONT_12_POINT, Rgb565::new(12, 28, 14));
+    Text::with_alignment(
+        status,
+        Point::new(240, 200),
+        status_style,
+        Alignment::Center,
+    )
+    .draw(fb)
+    .ok();
+}
+
 // ── Entry point ─────────────────────────────────────────────────────
 
 fn main() -> Result<()> {
@@ -364,8 +409,18 @@ fn main() -> Result<()> {
     esp_check(unsafe { board_power_init() }, "board_power_init")?;
     info!("Power + LCD reset OK");
 
-    // ── 2. Display init ──
+    // ── 2. Display init + immediate splash screen ──
     let ctx = init_display()?;
+
+    // Create framebuffer early so we can show a boot screen immediately
+    let mut fb = framebuffer::Framebuffer::new(
+        framebuffer::FB_WIDTH,
+        framebuffer::FB_HEIGHT,
+    );
+
+    // Show splash before backlight so first frame is ready
+    draw_splash(&mut fb, "Starting...");
+    fb.flush_to_panel(ctx.io, ctx.panel);
     enable_backlight();
 
     // ── 3. Peripherals ──
@@ -418,6 +473,8 @@ fn main() -> Result<()> {
     let mut wifi_networks: Vec<(String, i8)> = Vec::new();
     let wifi_ok;
     let _wifi = if !wifi_ssid.is_empty() {
+        draw_splash(&mut fb, &format!("Connecting to '{}'...", wifi_ssid));
+        fb.flush_to_panel(ctx.io, ctx.panel);
         info!("Connecting to WiFi '{}'...", wifi_ssid);
         match wifi::connect_wifi(peripherals.modem, sysloop.clone(), &wifi_ssid, &wifi_pass) {
             Ok(result) => {
@@ -442,6 +499,8 @@ fn main() -> Result<()> {
 
     // ── 10. NTP time sync ──
     let _sntp = if wifi_ok {
+        draw_splash(&mut fb, "Syncing time...");
+        fb.flush_to_panel(ctx.io, ctx.panel);
         match time_sync::sync_time(&timezone) {
             Ok(sntp) => Some(sntp),
             Err(e) => {
@@ -502,20 +561,10 @@ fn main() -> Result<()> {
         log::warn!("No weather API key (use console: api set-key <key>)");
     }
 
-    // ── 13. Framebuffer (landscape 480x320, rotated to panel on flush) ──
-    let mut fb = framebuffer::Framebuffer::new(
-        framebuffer::FB_WIDTH,
-        framebuffer::FB_HEIGHT,
-    );
-
-    // ── 14. Main event loop ──
+    // ── 13. Main event loop ──
     info!("Entering main loop");
     let mut last_bme_ms: u32 = 0;
     let mut tick_count: u32 = 0;
-
-    // Clear display on boot (avoid showing stale framebuffer)
-    fb.clear_color(embedded_graphics::pixelcolor::Rgb565::new(0, 0, 0));
-    fb.flush_to_panel(ctx.io, ctx.panel);
 
     // Initial draw
     views::draw_current_view(&mut fb, &state);
