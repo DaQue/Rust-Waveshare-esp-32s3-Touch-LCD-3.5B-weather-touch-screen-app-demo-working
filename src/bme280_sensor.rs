@@ -106,14 +106,33 @@ impl Bme280 {
         self.dig_h5 = ((cal2[5] as i16) << 4) | ((cal2[4] as i16) >> 4);
         self.dig_h6 = cal2[6] as i8;
 
+        info!("BME280 hum cal: H1={} H2={} H3={} H4={} H5={} H6={}",
+            self.dig_h1, self.dig_h2, self.dig_h3, self.dig_h4, self.dig_h5, self.dig_h6);
+
         Ok(())
     }
 
     fn configure(&self, i2c: &mut I2cDriver<'_>) {
-        // Normal mode, oversampling x1 for all
-        let _ = i2c.write(self.addr, &[REG_CTRL_HUM, 0x01], 100);   // humidity x1
-        let _ = i2c.write(self.addr, &[REG_CONFIG, 0xA0], 100);      // standby 1000ms, filter off
-        let _ = i2c.write(self.addr, &[REG_CTRL_MEAS, 0x27], 100);   // temp x1, press x1, normal mode
+        // BME280 datasheet: ctrl_hum changes only take effect after writing ctrl_meas.
+        // Write order: config (sleep mode first) → ctrl_hum → ctrl_meas (activates all).
+
+        // 1. Put sensor in sleep mode first (ctrl_meas with mode=00)
+        let _ = i2c.write(self.addr, &[REG_CTRL_MEAS, 0x00], 100);
+        // 2. Set config (standby 1000ms, filter off)
+        let _ = i2c.write(self.addr, &[REG_CONFIG, 0xA0], 100);
+        // 3. Set humidity oversampling x1
+        let _ = i2c.write(self.addr, &[REG_CTRL_HUM, 0x01], 100);
+        // 4. Set temp x1, press x1, normal mode — this activates ctrl_hum setting
+        let _ = i2c.write(self.addr, &[REG_CTRL_MEAS, 0x27], 100);
+
+        // Verify ctrl_hum was set
+        let mut check = [0u8];
+        if i2c.write_read(self.addr, &[REG_CTRL_HUM], &mut check, 100).is_ok() {
+            info!("BME280 ctrl_hum readback: 0x{:02X} (expect 0x01)", check[0]);
+        }
+        if i2c.write_read(self.addr, &[REG_CTRL_MEAS], &mut check, 100).is_ok() {
+            info!("BME280 ctrl_meas readback: 0x{:02X} (expect 0x27)", check[0]);
+        }
     }
 
     /// Read temperature, humidity, and pressure.
@@ -167,20 +186,23 @@ impl Bme280 {
     }
 
     fn compensate_humidity(&self, adc_h: i32, t_fine: i32) -> f32 {
-        // Use i64 to avoid overflow in intermediate multiplications
+        // BME280 datasheet Section 4.2.3 — integer compensation formula (i64 to avoid overflow)
         let v = (t_fine - 76800) as i64;
-        if v == 0 {
-            return 0.0;
-        }
-        let x1 = (adc_h as i64) - ((self.dig_h4 as i64) << 4)
-            - (((self.dig_h5 as i64) * v) >> 14);
-        let x2 = ((((v * (self.dig_h6 as i64)) >> 10)
-            * (((v * (self.dig_h3 as i64)) >> 11) + 32768))
-            >> 10)
-            + 2097152;
-        let mut var = (x1 * (((x2 * (self.dig_h2 as i64)) >> 10) + 8192)) >> 14;
-        var -= ((((var >> 15) * (var >> 15)) >> 7) * (self.dig_h1 as i64)) >> 4;
+
+        let x1 = ((adc_h as i64) << 14)
+            - ((self.dig_h4 as i64) << 20)
+            - ((self.dig_h5 as i64) * v);
+        let x1 = (x1 + 16384) >> 15;
+
+        let x2 = (v * (self.dig_h6 as i64)) >> 10;
+        let x3 = (v * (self.dig_h3 as i64)) >> 11;
+        let x2 = ((x2 * (x3 + 32768)) >> 10) + 2097152;
+        let x2 = ((x2 * (self.dig_h2 as i64)) + 8192) >> 14;
+
+        let mut var = x1 * x2;
+        var -= (((var >> 15) * (var >> 15)) >> 7) * (self.dig_h1 as i64) >> 4;
         var = var.clamp(0, 419430400);
+
         (var >> 12) as f32 / 1024.0
     }
 }
