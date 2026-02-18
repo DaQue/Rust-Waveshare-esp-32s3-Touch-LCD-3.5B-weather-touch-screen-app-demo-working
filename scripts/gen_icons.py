@@ -254,22 +254,15 @@ ICONS = {
 }
 
 # ---------------------------------------------------------------------------
-# RGB565 BMP writer
+# 24-bit BMP writer (tinybmp handles these reliably)
 # ---------------------------------------------------------------------------
 
-def rgb565(r, g, b):
-    r5 = (r >> 3) & 0x1F
-    g6 = (g >> 2) & 0x3F
-    b5 = (b >> 3) & 0x1F
-    return (r5 << 11) | (g6 << 5) | b5
-
-
-def write_rgb565_bmp(img, path):
-    """Write an RGBA PIL Image as a 16-bit RGB565 BMP with BI_BITFIELDS."""
+def write_24bit_bmp(img, path):
+    """Write an RGBA PIL Image as a standard 24-bit uncompressed BMP."""
     w, h = img.size
-    row_bytes = w * 2
+    row_bytes = w * 3
     row_pad = (4 - (row_bytes % 4)) % 4
-    headers_size = 14 + 40 + 12
+    headers_size = 14 + 40
     pixel_data_size = (row_bytes + row_pad) * h
     file_size = headers_size + pixel_data_size
 
@@ -281,23 +274,19 @@ def write_rgb565_bmp(img, path):
         f.write(struct.pack('<I', file_size))
         f.write(struct.pack('<HH', 0, 0))
         f.write(struct.pack('<I', headers_size))
-        # DIB Header (40 bytes)
+        # DIB Header (40 bytes) — BITMAPINFOHEADER
         f.write(struct.pack('<I', 40))
         f.write(struct.pack('<i', w))
         f.write(struct.pack('<i', h))
-        f.write(struct.pack('<H', 1))
-        f.write(struct.pack('<H', 16))
-        f.write(struct.pack('<I', 3))  # BI_BITFIELDS
+        f.write(struct.pack('<H', 1))       # planes
+        f.write(struct.pack('<H', 24))      # bpp
+        f.write(struct.pack('<I', 0))       # BI_RGB (no compression)
         f.write(struct.pack('<I', pixel_data_size))
         f.write(struct.pack('<i', 2835))
         f.write(struct.pack('<i', 2835))
         f.write(struct.pack('<I', 0))
         f.write(struct.pack('<I', 0))
-        # Color masks (12 bytes)
-        f.write(struct.pack('<I', 0xF800))  # red
-        f.write(struct.pack('<I', 0x07E0))  # green
-        f.write(struct.pack('<I', 0x001F))  # blue
-        # Pixel data (bottom-up)
+        # Pixel data (bottom-up, BGR byte order per BMP spec)
         pad_bytes = b'\x00' * row_pad
         for y in range(h - 1, -1, -1):
             row_data = bytearray(row_bytes)
@@ -308,8 +297,10 @@ def write_rgb565_bmp(img, path):
                     r = int(r * af + BG[0] * (1 - af))
                     g = int(g * af + BG[1] * (1 - af))
                     b = int(b * af + BG[2] * (1 - af))
-                val = rgb565(r, g, b)
-                struct.pack_into('<H', row_data, x * 2, val)
+                off = x * 3
+                row_data[off]     = b  # BMP stores BGR
+                row_data[off + 1] = g
+                row_data[off + 2] = r
             f.write(row_data)
             if row_pad:
                 f.write(pad_bytes)
@@ -331,7 +322,7 @@ def main():
 
             fname = f"{name}_{sz}.bmp"
             fpath = os.path.join(OUT_DIR, fname)
-            write_rgb565_bmp(img, fpath)
+            write_24bit_bmp(img, fpath)
             count += 1
             file_size = os.path.getsize(fpath)
             print(f"  {fname:<30s}  {file_size:>6d} bytes")

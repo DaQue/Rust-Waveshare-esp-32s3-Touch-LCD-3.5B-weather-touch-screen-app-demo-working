@@ -21,7 +21,7 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
     // Bottom hint
     let hint_style = MonoTextStyle::new(&PROFONT_10_POINT, TEXT_BOTTOM);
     Text::with_alignment(
-        "(swipe \u{2190}/\u{2192} or tap header to switch pages)",
+        "(swipe <-/-> or tap header to switch pages)",
         Point::new(SCREEN_W / 2, SCREEN_H - 4),
         hint_style,
         Alignment::Center,
@@ -39,7 +39,7 @@ fn draw_daily(fb: &mut Framebuffer, state: &AppState) {
     // "> Main" nav on right
     let nav_style = MonoTextStyle::new(&PROFONT_12_POINT, TEXT_CONDITION);
     Text::with_alignment(
-        "\u{25b8} Main",
+        "Main >",
         Point::new(SCREEN_W - 10, 24),
         nav_style,
         Alignment::Right,
@@ -118,7 +118,7 @@ fn draw_hourly(fb: &mut Framebuffer, state: &AppState) {
     // "X Close" nav on right
     let nav_style = MonoTextStyle::new(&PROFONT_12_POINT, TEXT_CONDITION);
     Text::with_alignment(
-        "\u{25b8} Main",
+        "Main >",
         Point::new(SCREEN_W - 10, 24),
         nav_style,
         Alignment::Right,
@@ -181,7 +181,7 @@ fn draw_hourly(fb: &mut Framebuffer, state: &AppState) {
             if day.entries.len() > visible_rows {
                 let indicator_style = MonoTextStyle::new(&PROFONT_10_POINT, TEXT_TERTIARY);
                 let indicator = format!(
-                    "{}-{} of {}  (swipe \u{2191}/\u{2193})",
+                    "{}-{} of {}  (swipe up/dn)",
                     scroll + 1,
                     (scroll + visible_rows).min(day.entries.len()),
                     day.entries.len()
