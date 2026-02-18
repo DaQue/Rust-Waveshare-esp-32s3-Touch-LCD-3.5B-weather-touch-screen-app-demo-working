@@ -1,6 +1,7 @@
 mod bme280_sensor;
 mod config;
 mod console;
+mod debug_flags;
 mod framebuffer;
 mod http_client;
 mod layout;
@@ -540,14 +541,22 @@ fn main() -> Result<()> {
             .name("weather".into())
             .stack_size(16384)
             .spawn(move || {
+                let mut first = true;
                 loop {
-                    info!("Weather fetch starting...");
+                    let verbose = first || crate::debug_flags::is_on(&crate::debug_flags::DEBUG_WEATHER);
+                    if verbose {
+                        info!("Weather fetch starting...");
+                    }
                     match weather::fetch_weather(&query, &key) {
                         Ok((current, forecast)) => {
-                            info!(
-                                "Weather: {}°F {} in {}",
-                                current.temp_f as i32, current.condition, current.city
-                            );
+                            if verbose {
+                                info!(
+                                    "Weather: {}°F {} in {} ({} forecast days)",
+                                    current.temp_f as i32, current.condition, current.city,
+                                    forecast.rows.len()
+                                );
+                            }
+                            first = false;
                             *wd.lock().unwrap() = Some((current, forecast));
                         }
                         Err(e) => {
@@ -596,6 +605,12 @@ fn main() -> Result<()> {
             last_bme_ms = t;
             if let Some(ref sensor) = bme280 {
                 if let Some(reading) = sensor.read(&mut i2c) {
+                    if debug_flags::is_on(&debug_flags::DEBUG_BME280) {
+                        info!(
+                            "BME280: {:.1}°F  {:.1}%RH  {:.0}hPa",
+                            reading.temperature_f, reading.humidity, reading.pressure_hpa
+                        );
+                    }
                     state.indoor_temp = Some(reading.temperature_f);
                     state.indoor_humidity = Some(reading.humidity);
                     state.indoor_pressure = Some(reading.pressure_hpa);

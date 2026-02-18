@@ -1,5 +1,13 @@
 use esp_idf_hal::i2c::I2cDriver;
-use log::{info, debug};
+use log::info;
+
+macro_rules! dbg_touch {
+    ($($arg:tt)*) => {
+        if crate::debug_flags::is_on(&crate::debug_flags::DEBUG_TOUCH) {
+            info!($($arg)*);
+        }
+    };
+}
 
 /// AXS15231B integrated touch controller at I2C address 0x3B.
 const TOUCH_ADDR: u8 = 0x3B;
@@ -60,7 +68,7 @@ impl TouchState {
         // Log touch stats every 50 polls (~5 seconds at 100ms tick)
         #[allow(clippy::manual_is_multiple_of)]
         if self.poll_count % 50 == 0 {
-            debug!(
+            dbg_touch!(
                 "TOUCH stats: polls={} errs={} touches={}",
                 self.poll_count, self.err_count, self.touch_count
             );
@@ -74,7 +82,7 @@ impl TouchState {
                 self.pressed = true;
                 self.start_x = x;
                 self.start_y = y;
-                debug!("TOUCH down at ({}, {})", x, y);
+                dbg_touch!("TOUCH down at ({}, {})", x, y);
             }
             self.last_x = x;
             self.last_y = y;
@@ -93,14 +101,14 @@ impl TouchState {
         let abs_dx = dx.abs();
         let abs_dy = dy.abs();
 
-        debug!(
+        dbg_touch!(
             "TOUCH up: start=({},{}) end=({},{}) dx={} dy={}",
             self.start_x, self.start_y, self.last_x, self.last_y, dx, dy
         );
 
         // Tap
         if abs_dx <= TOUCH_TAP_MAX_MOVE_PX && abs_dy <= TOUCH_TAP_MAX_MOVE_PX {
-            debug!("TOUCH -> Tap at ({}, {})", self.last_x, self.last_y);
+            dbg_touch!("TOUCH -> Tap at ({}, {})", self.last_x, self.last_y);
             return Gesture::Tap {
                 x: self.last_x,
                 y: self.last_y,
@@ -116,7 +124,7 @@ impl TouchState {
         if abs_dy >= TOUCH_SWIPE_MIN_Y_PX && abs_dy >= abs_dx {
             self.last_swipe_ms = now_ms;
             let g = if dy < 0 { Gesture::SwipeUp } else { Gesture::SwipeDown };
-            debug!("TOUCH -> {:?}", g);
+            dbg_touch!("TOUCH -> {:?}", g);
             return g;
         }
 
@@ -124,11 +132,11 @@ impl TouchState {
         if abs_dx >= TOUCH_SWIPE_MIN_X_PX && abs_dy <= TOUCH_SWIPE_MAX_Y_PX && abs_dx > abs_dy {
             self.last_swipe_ms = now_ms;
             let g = if dx < 0 { Gesture::SwipeLeft } else { Gesture::SwipeRight };
-            debug!("TOUCH -> {:?}", g);
+            dbg_touch!("TOUCH -> {:?}", g);
             return g;
         }
 
-        debug!("TOUCH -> unclassified (abs_dx={}, abs_dy={})", abs_dx, abs_dy);
+        dbg_touch!("TOUCH -> unclassified (abs_dx={}, abs_dy={})", abs_dx, abs_dy);
         Gesture::None
     }
 }
@@ -149,7 +157,7 @@ fn read_touch(i2c: &mut I2cDriver<'_>, err_count: &mut u32, poll_count: u32) -> 
 
     // Log raw bytes every 50 polls so we can see what idle looks like
     if poll_count % 50 == 1 {
-        debug!(
+        dbg_touch!(
             "TOUCH raw: [{:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X}]",
             data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7]
         );
@@ -180,9 +188,9 @@ pub fn probe(i2c: &mut I2cDriver<'_>) {
     // Try write_read (repeated start)
     let mut data = [0u8; 14];
     match i2c.write_read(TOUCH_ADDR, &TOUCH_READ_CMD, &mut data, 100) {
-        Ok(_) => debug!("Touch write_read OK: [{:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X}]",
+        Ok(_) => dbg_touch!("Touch write_read OK: [{:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X}]",
             data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7]),
-        Err(e) => debug!("Touch write_read FAILED: {:?}", e),
+        Err(e) => dbg_touch!("Touch write_read FAILED: {:?}", e),
     }
 
     // Try separate write + read
@@ -190,19 +198,19 @@ pub fn probe(i2c: &mut I2cDriver<'_>) {
         Ok(_) => {
             let mut data2 = [0u8; 14];
             match i2c.read(TOUCH_ADDR, &mut data2, 100) {
-                Ok(_) => debug!("Touch write+read OK: [{:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X}]",
+                Ok(_) => dbg_touch!("Touch write+read OK: [{:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X}]",
                     data2[0], data2[1], data2[2], data2[3], data2[4], data2[5], data2[6], data2[7]),
-                Err(e) => debug!("Touch write OK, read FAILED: {:?}", e),
+                Err(e) => dbg_touch!("Touch write OK, read FAILED: {:?}", e),
             }
         }
-        Err(e) => debug!("Touch write FAILED: {:?}", e),
+        Err(e) => dbg_touch!("Touch write FAILED: {:?}", e),
     }
 
     // Try simple single-byte read (basic I2C health check)
     let mut byte = [0u8; 1];
     match i2c.read(TOUCH_ADDR, &mut byte, 100) {
-        Ok(_) => debug!("Touch bare read OK: [{:02X}]", byte[0]),
-        Err(e) => debug!("Touch bare read FAILED: {:?}", e),
+        Ok(_) => dbg_touch!("Touch bare read OK: [{:02X}]", byte[0]),
+        Err(e) => dbg_touch!("Touch bare read FAILED: {:?}", e),
     }
 
     info!("=== TOUCH PROBE END ===");
