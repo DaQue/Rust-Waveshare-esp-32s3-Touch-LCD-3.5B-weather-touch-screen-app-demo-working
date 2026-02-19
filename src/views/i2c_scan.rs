@@ -12,13 +12,13 @@ use crate::views::AppState;
 /// Map known I2C addresses to device names.
 fn device_name(addr: u8) -> &'static str {
     match addr {
+        0x18 => "QMI8658 IMU",
+        0x20 => "PCF8574 GPIO Exp",
         0x34 => "AXP2101 PMIC",
-        0x3B => "AXS15231B Touch",
-        0x76 => "BME280 Sensor",
-        0x77 => "BME280 Sensor",
-        0x50 => "EEPROM",
-        0x68 => "DS3231 RTC",
-        0x57 => "MAX30102 SpO2",
+        0x3B => "FT6x36 Touch",
+        0x51 => "EEPROM",
+        0x6B => "QMI8658 IMU",
+        0x76 | 0x77 => "BME280 Sensor",
         _ => "",
     }
 }
