@@ -14,6 +14,10 @@ pub fn is_on(flag: &AtomicBool) -> bool {
     flag.load(Ordering::Relaxed)
 }
 
+pub fn set(flag: &AtomicBool, val: bool) {
+    flag.store(val, Ordering::Relaxed);
+}
+
 pub fn toggle(flag: &AtomicBool) -> bool {
     let old = flag.load(Ordering::Relaxed);
     flag.store(!old, Ordering::Relaxed);

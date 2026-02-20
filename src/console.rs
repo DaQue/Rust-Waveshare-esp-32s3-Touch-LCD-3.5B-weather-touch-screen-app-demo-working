@@ -126,11 +126,14 @@ fn handle_debug(sub: &str) {
             info!("debug weather: {}", if on { "ON" } else { "OFF" });
         }
         "all" => {
-            let touch = toggle(&DEBUG_TOUCH);
-            toggle(&DEBUG_BME280);
-            toggle(&DEBUG_WIFI);
-            toggle(&DEBUG_WEATHER);
-            info!("debug all: {}", if touch { "ON" } else { "OFF" });
+            // If any flag is off, turn all on; if all on, turn all off
+            let any_off = !is_on(&DEBUG_TOUCH) || !is_on(&DEBUG_BME280)
+                || !is_on(&DEBUG_WIFI) || !is_on(&DEBUG_WEATHER);
+            set(&DEBUG_TOUCH, any_off);
+            set(&DEBUG_BME280, any_off);
+            set(&DEBUG_WIFI, any_off);
+            set(&DEBUG_WEATHER, any_off);
+            info!("debug all: {}", if any_off { "ON" } else { "OFF" });
         }
         _ => {
             info!("unknown module '{}'. options: touch, bme280, wifi, weather, all", sub);

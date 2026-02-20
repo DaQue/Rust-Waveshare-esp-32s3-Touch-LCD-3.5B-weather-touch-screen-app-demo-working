@@ -95,21 +95,27 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
         .ok();
     }
 
+    // Get contiguous slices for graph rendering
+    let temp_slice = state.indoor_temp_history.as_slices();
+    let temp_data: Vec<f32> = temp_slice.0.iter().chain(temp_slice.1.iter()).copied().collect();
+    let hum_slice = state.indoor_hum_history.as_slices();
+    let hum_data: Vec<f32> = hum_slice.0.iter().chain(hum_slice.1.iter()).copied().collect();
+
     // Draw temperature line
-    if state.indoor_temp_history.len() >= 2 {
+    if temp_data.len() >= 2 {
         draw_line_graph(
             fb,
-            &state.indoor_temp_history,
+            &temp_data,
             graph_x, graph_y, graph_w, graph_h,
             GRAPH_TEMP_COLOR,
         );
     }
 
     // Draw humidity line
-    if state.indoor_hum_history.len() >= 2 {
+    if hum_data.len() >= 2 {
         draw_line_graph(
             fb,
-            &state.indoor_hum_history,
+            &hum_data,
             graph_x, graph_y, graph_w, graph_h,
             GRAPH_HUM_COLOR,
         );
@@ -117,8 +123,8 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
 
     // Y-axis labels (auto-scale based on data)
     let axis_style = MonoTextStyle::new(&PROFONT_10_POINT, TEXT_TERTIARY);
-    if !state.indoor_temp_history.is_empty() {
-        let (min_v, max_v) = data_range(&state.indoor_temp_history);
+    if !temp_data.is_empty() {
+        let (min_v, max_v) = data_range(&temp_data);
         let top_label = format!("{:.0}", max_v);
         let bot_label = format!("{:.0}", min_v);
         Text::with_alignment(&top_label, Point::new(graph_x - 4, graph_y + 8), axis_style, Alignment::Right)

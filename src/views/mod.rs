@@ -5,6 +5,7 @@ pub mod i2c_scan;
 pub mod wifi_scan;
 pub mod about;
 
+use std::collections::VecDeque;
 use crate::framebuffer::Framebuffer;
 use crate::touch::Gesture;
 
@@ -54,8 +55,8 @@ pub struct AppState {
     pub indoor_temp: Option<f32>,
     pub indoor_humidity: Option<f32>,
     pub indoor_pressure: Option<f32>,
-    pub indoor_temp_history: Vec<f32>,
-    pub indoor_hum_history: Vec<f32>,
+    pub indoor_temp_history: VecDeque<f32>,
+    pub indoor_hum_history: VecDeque<f32>,
     pub time_text: String,
     pub status_text: String,
     pub bottom_text: String,
@@ -81,8 +82,8 @@ impl AppState {
             indoor_temp: None,
             indoor_humidity: None,
             indoor_pressure: None,
-            indoor_temp_history: Vec::new(),
-            indoor_hum_history: Vec::new(),
+            indoor_temp_history: VecDeque::new(),
+            indoor_hum_history: VecDeque::new(),
             time_text: String::new(),
             status_text: "Starting...".to_string(),
             bottom_text: String::new(),
