@@ -89,7 +89,9 @@ fn process_line(
             info!("query: {}", cfg.weather_query);
             info!("flash time: {}", cfg.flash_time);
             info!("alerts enabled: {}", cfg.alerts_enabled);
+            info!("alerts auto-scope: {}", cfg.alerts_auto_scope);
             info!("alerts scope: {}", cfg.nws_scope);
+            info!("alerts zone: {}", if cfg.nws_zone.is_empty() { "<unset>" } else { &cfg.nws_zone });
             info!("alerts ua: {}", cfg.nws_user_agent);
             info!("orientation: {}", cfg.orientation_mode.as_str());
             info!("orientation flip: {}", if cfg.orientation_flip { "on" } else { "off" });
@@ -123,8 +125,10 @@ fn print_help() {
     info!("  api clear                  - clear API overrides");
     info!("  alerts show                - show alert settings");
     info!("  alerts on|off              - enable/disable NWS alerts");
+    info!("  alerts auto-scope on|off   - auto-discover NWS zone from Wi-Fi");
     info!("  alerts ua <user-agent>     - set NWS User-Agent");
-    info!("  alerts scope <scope>       - set NWS scope (example: state=MO)");
+    info!("  alerts scope <scope>       - set NWS scope (example: area=MO)");
+    info!("  alerts zone show|clear     - show/clear cached zone");
     info!("  flash show                 - show flash metadata");
     info!("  flash set-time <text>      - set flash time metadata");
     info!("  orientation auto|landscape|portrait");
@@ -418,7 +422,9 @@ fn handle_alerts(
         "" | "show" => {
             let cfg = config.lock().unwrap();
             info!("alerts enabled: {}", cfg.alerts_enabled);
+            info!("alerts auto-scope: {}", cfg.alerts_auto_scope);
             info!("alerts scope: {}", cfg.nws_scope);
+            info!("alerts zone: {}", if cfg.nws_zone.is_empty() { "<unset>" } else { &cfg.nws_zone });
             info!("alerts ua: {}", cfg.nws_user_agent);
         }
         "on" | "enable" | "enabled" => {
@@ -455,7 +461,43 @@ fn handle_alerts(
             config.lock().unwrap().nws_scope = scope.to_string();
             info!("alerts scope saved: {}", scope);
         }
-        _ => info!("usage: alerts show|on|off|ua <user-agent>|scope <scope>"),
+        "auto-scope" => {
+            let val = rest.trim().to_ascii_lowercase();
+            let enabled = match val.as_str() {
+                "on" | "1" | "true" | "enable" | "enabled" => true,
+                "off" | "0" | "false" | "disable" | "disabled" => false,
+                "" | "show" => {
+                    let cfg = config.lock().unwrap();
+                    info!("alerts auto-scope: {}", cfg.alerts_auto_scope);
+                    return Ok(());
+                }
+                _ => {
+                    info!("usage: alerts auto-scope on|off");
+                    return Ok(());
+                }
+            };
+            let mut nvs = nvs.lock().unwrap();
+            Config::save_alerts_auto_scope(&mut nvs, enabled)?;
+            config.lock().unwrap().alerts_auto_scope = enabled;
+            info!("alerts auto-scope: {}", enabled);
+        }
+        "zone" => {
+            let op = rest.trim().to_ascii_lowercase();
+            match op.as_str() {
+                "" | "show" => {
+                    let cfg = config.lock().unwrap();
+                    info!("alerts zone: {}", if cfg.nws_zone.is_empty() { "<unset>" } else { &cfg.nws_zone });
+                }
+                "clear" => {
+                    let mut nvs = nvs.lock().unwrap();
+                    Config::save_nws_zone(&mut nvs, "")?;
+                    config.lock().unwrap().nws_zone.clear();
+                    info!("alerts zone cleared");
+                }
+                _ => info!("usage: alerts zone show|clear"),
+            }
+        }
+        _ => info!("usage: alerts show|on|off|auto-scope on|off|ua <user-agent>|scope <scope>|zone show|clear"),
     }
     Ok(())
 }

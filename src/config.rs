@@ -14,8 +14,10 @@ const KEY_ORIENTATION: &str = "orientation";
 const KEY_ORIENTATION_FLIP: &str = "ori_flip";
 const KEY_FLASH_TIME: &str = "flash_time";
 const KEY_ALERTS_ENABLED: &str = "alerts_en";
+const KEY_ALERTS_AUTO_SCOPE: &str = "al_auto";
 const KEY_NWS_USER_AGENT: &str = "nws_ua";
 const KEY_NWS_SCOPE: &str = "nws_scope";
+const KEY_NWS_ZONE: &str = "nws_zone";
 
 const DEFAULT_WIFI_SSID: &str = "YOUR_WIFI_SSID";
 const DEFAULT_WIFI_PASS: &str = "A7MZLB2nCuvUqIrpBQB";
@@ -63,8 +65,10 @@ pub struct Config {
     pub orientation_flip: bool,
     pub flash_time: String,
     pub alerts_enabled: bool,
+    pub alerts_auto_scope: bool,
     pub nws_user_agent: String,
     pub nws_scope: String,
+    pub nws_zone: String,
 }
 
 /// Read a string from NVS, returning None if the key is absent or on error.
@@ -131,12 +135,20 @@ impl Config {
             .unwrap_or(0)
             != 0;
         info!("NVS alerts_enabled = {}", alerts_enabled);
+        let alerts_auto_scope = nvs
+            .get_u8(KEY_ALERTS_AUTO_SCOPE)
+            .unwrap_or(None)
+            .unwrap_or(0)
+            != 0;
+        info!("NVS alerts_auto_scope = {}", alerts_auto_scope);
         let nws_user_agent = nvs_get_str(nvs, KEY_NWS_USER_AGENT)
             .unwrap_or_else(|| DEFAULT_NWS_USER_AGENT.to_string());
         info!("NVS nws_user_agent = {:?}", nws_user_agent);
         let nws_scope = nvs_get_str(nvs, KEY_NWS_SCOPE)
             .unwrap_or_else(|| DEFAULT_NWS_SCOPE.to_string());
         info!("NVS nws_scope = {:?}", nws_scope);
+        let nws_zone = nvs_get_str(nvs, KEY_NWS_ZONE).unwrap_or_default();
+        info!("NVS nws_zone = {:?}", nws_zone);
 
         Config {
             wifi_ssid,
@@ -149,8 +161,10 @@ impl Config {
             orientation_flip,
             flash_time,
             alerts_enabled,
+            alerts_auto_scope,
             nws_user_agent,
             nws_scope,
+            nws_zone,
         }
     }
 
@@ -213,6 +227,12 @@ impl Config {
         Ok(())
     }
 
+    pub fn save_alerts_auto_scope(nvs: &mut EspNvs<NvsDefault>, enabled: bool) -> Result<()> {
+        nvs.set_u8(KEY_ALERTS_AUTO_SCOPE, if enabled { 1 } else { 0 })?;
+        info!("NVS saved alerts_auto_scope={}", enabled);
+        Ok(())
+    }
+
     pub fn save_nws_user_agent(nvs: &mut EspNvs<NvsDefault>, user_agent: &str) -> Result<()> {
         nvs.set_str(KEY_NWS_USER_AGENT, user_agent)?;
         info!("NVS saved nws_user_agent={:?}", user_agent);
@@ -222,6 +242,12 @@ impl Config {
     pub fn save_nws_scope(nvs: &mut EspNvs<NvsDefault>, scope: &str) -> Result<()> {
         nvs.set_str(KEY_NWS_SCOPE, scope)?;
         info!("NVS saved nws_scope={:?}", scope);
+        Ok(())
+    }
+
+    pub fn save_nws_zone(nvs: &mut EspNvs<NvsDefault>, zone: &str) -> Result<()> {
+        nvs.set_str(KEY_NWS_ZONE, zone)?;
+        info!("NVS saved nws_zone={:?}", zone);
         Ok(())
     }
 }

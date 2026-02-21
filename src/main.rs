@@ -53,9 +53,11 @@ const TICK_MS: u64 = 100;
 const TIME_UPDATE_TICKS: u32 = 10; // every second
 const WIFI_DEBUG_TICKS: u32 = 100; // every 10 seconds
 const ORIENTATION_POLL_TICKS: u32 = 2; // every 200ms
-const ORIENTATION_SWITCH_MARGIN_G: f32 = 0.18;
+const ORIENTATION_SWITCH_MARGIN_G: f32 = 0.22;
 const ORIENTATION_MAX_Z_G: f32 = 0.85;
-const ORIENTATION_CONFIRM_SAMPLES: u8 = 3;
+const ORIENTATION_MIN_AXIS_G: f32 = 0.62;
+const ORIENTATION_CONFIRM_SAMPLES: u8 = 4;
+const ORIENTATION_CHANGE_COOLDOWN_MS: u32 = 1_200;
 
 // ── FFI structs matching the C AXS15231B driver ────────────────────
 
@@ -276,11 +278,16 @@ fn detect_orientation_from_imu(r: &qmi8658::ImuReading) -> Option<layout::Orient
     }
     let ax = r.accel_x.abs();
     let ay = r.accel_y.abs();
+    let dominant = ax.max(ay);
+    if dominant < ORIENTATION_MIN_AXIS_G {
+        return None;
+    }
     if ax > ay + ORIENTATION_SWITCH_MARGIN_G {
+        // For this board mounting, +X tilt corresponds to upside-down portrait.
         if r.accel_x >= 0.0 {
-            Some(layout::Orientation::Portrait)
-        } else {
             Some(layout::Orientation::PortraitFlipped)
+        } else {
+            Some(layout::Orientation::Portrait)
         }
     } else if ay > ax + ORIENTATION_SWITCH_MARGIN_G {
         if r.accel_y < 0.0 {
@@ -291,6 +298,23 @@ fn detect_orientation_from_imu(r: &qmi8658::ImuReading) -> Option<layout::Orient
     } else {
         None
     }
+}
+
+fn apply_orientation(
+    state: &mut views::AppState,
+    fb: &mut framebuffer::Framebuffer,
+    next: layout::Orientation,
+) {
+    if state.orientation == next {
+        return;
+    }
+    let (old_w, old_h) = framebuffer_dims(state.orientation);
+    let (new_w, new_h) = framebuffer_dims(next);
+    state.orientation = next;
+    if old_w != new_w || old_h != new_h {
+        *fb = framebuffer::Framebuffer::new(new_w, new_h);
+    }
+    state.dirty = true;
 }
 
 // ── Display init (mirrors C factory bsp_display_init exactly) ──────
@@ -461,7 +485,10 @@ fn main() -> Result<()> {
     esp_idf_sys::link_patches();
     esp_idf_svc::log::EspLogger::initialize_default();
 
-    info!("BOOT — waveshare_s3_3p weather dashboard");
+    info!(
+        "BOOT — waveshare_s3_3p weather dashboard v{}",
+        env!("CARGO_PKG_VERSION")
+    );
 
     // ── 1. Board power (TCA9554 IO expander + AXP2101 PMIC + LCD reset) ──
     esp_check(unsafe { board_power_init() }, "board_power_init")?;
@@ -666,20 +693,54 @@ fn main() -> Result<()> {
     if wifi_ok {
         let ad = alert_data.clone();
         let cfg_alerts = cfg.clone();
+        let nvs_alerts = nvs.clone();
         std::thread::Builder::new()
             .name("alerts".into())
             .stack_size(12288)
             .spawn(move || {
                 loop {
-                    let (enabled, scope, ua) = {
+                    let (enabled, auto_scope, scope, cached_zone, ua) = {
                         let c = cfg_alerts.lock().unwrap();
-                        (c.alerts_enabled, c.nws_scope.clone(), c.nws_user_agent.clone())
+                        (
+                            c.alerts_enabled,
+                            c.alerts_auto_scope,
+                            c.nws_scope.clone(),
+                            c.nws_zone.clone(),
+                            c.nws_user_agent.clone(),
+                        )
                     };
                     if !enabled {
                         std::thread::sleep(Duration::from_secs(5));
                         continue;
                     }
-                    match weather::fetch_nws_alerts(&scope, &ua) {
+
+                    let effective_scope = if auto_scope {
+                        if cached_zone.is_empty() {
+                            match weather::discover_nws_zone(&ua) {
+                                Ok(zone) => {
+                                    info!("NWS auto-scope discovered zone={}", zone);
+                                    if let Ok(mut c) = cfg_alerts.lock() {
+                                        c.nws_zone = zone.clone();
+                                    }
+                                    if let Ok(mut nvs) = nvs_alerts.lock() {
+                                        let _ = config::Config::save_nws_zone(&mut nvs, &zone);
+                                    }
+                                    format!("zone={}", zone)
+                                }
+                                Err(e) => {
+                                    log::warn!("NWS auto-scope discovery failed: {}", e);
+                                    std::thread::sleep(Duration::from_secs(60));
+                                    continue;
+                                }
+                            }
+                        } else {
+                            format!("zone={}", cached_zone)
+                        }
+                    } else {
+                        scope
+                    };
+
+                    match weather::fetch_nws_alerts(&effective_scope, &ua) {
                         Ok(alerts) => {
                             let count = alerts.len();
                             *ad.lock().unwrap() = Some(alerts);
@@ -704,6 +765,7 @@ fn main() -> Result<()> {
     let mut tick_count: u32 = 0;
     let mut orientation_candidate = state.orientation;
     let mut orientation_candidate_count: u8 = 0;
+    let mut last_orientation_change_ms: u32 = now_ms();
 
     // Initial draw
     views::draw_current_view(&mut fb, &state);
@@ -810,10 +872,8 @@ fn main() -> Result<()> {
             if mode != config::OrientationMode::Auto {
                 let target = locked_orientation(mode, state.orientation_flip);
                 if state.orientation != target {
-                    state.orientation = target;
-                    let (fb_w, fb_h) = framebuffer_dims(state.orientation);
-                    fb = framebuffer::Framebuffer::new(fb_w, fb_h);
-                    state.dirty = true;
+                    apply_orientation(&mut state, &mut fb, target);
+                    last_orientation_change_ms = now_ms();
                     info!("Orientation: {:?}", state.orientation);
                 }
             }
@@ -825,10 +885,8 @@ fn main() -> Result<()> {
             if state.orientation_mode != config::OrientationMode::Auto {
                 let target = locked_orientation(state.orientation_mode, state.orientation_flip);
                 if state.orientation != target {
-                    state.orientation = target;
-                    let (fb_w, fb_h) = framebuffer_dims(state.orientation);
-                    fb = framebuffer::Framebuffer::new(fb_w, fb_h);
-                    state.dirty = true;
+                    apply_orientation(&mut state, &mut fb, target);
+                    last_orientation_change_ms = now_ms();
                     info!("Orientation: {:?}", state.orientation);
                 }
             } else {
@@ -840,6 +898,7 @@ fn main() -> Result<()> {
         if imu_ok
             && state.orientation_mode == config::OrientationMode::Auto
             && tick_count.is_multiple_of(ORIENTATION_POLL_TICKS)
+            && now_ms().wrapping_sub(last_orientation_change_ms) >= ORIENTATION_CHANGE_COOLDOWN_MS
         {
             if let Some(r) = qmi8658::read(&mut i2c) {
                 if let Some(next) = detect_orientation_from_imu(&r) {
@@ -852,11 +911,9 @@ fn main() -> Result<()> {
                             orientation_candidate_count = 1;
                         }
                         if orientation_candidate_count >= ORIENTATION_CONFIRM_SAMPLES {
-                            state.orientation = next;
-                            let (fb_w, fb_h) = framebuffer_dims(state.orientation);
-                            fb = framebuffer::Framebuffer::new(fb_w, fb_h);
-                            state.dirty = true;
+                            apply_orientation(&mut state, &mut fb, next);
                             orientation_candidate_count = 0;
+                            last_orientation_change_ms = now_ms();
                             info!("Auto-rotation -> {:?}", state.orientation);
                         }
                     } else {

@@ -75,6 +75,7 @@ Troubleshooting
 
 Recent Orientation Updates (2026-02-21)
 ---------------------------------------
+- Firmware/package version is now `0.2.0`.
 - Runtime screen orientation now supports all 4 physical directions:
   - `Landscape` (USB right)
   - `LandscapeFlipped` (USB left)
@@ -82,7 +83,8 @@ Recent Orientation Updates (2026-02-21)
   - `PortraitFlipped` (USB top)
 - Auto mode uses the QMI8658 accelerometer with hysteresis to prevent rapid flip noise.
 - Locked mode still uses `landscape`/`portrait`, with optional 180-degree flip.
-- Orientation changes trigger framebuffer reallocation and full redraw.
+- Orientation changes trigger full redraw.
+- Framebuffer reallocation happens only when switching between landscape and portrait dimensions.
 - Touch coordinates are remapped per active orientation.
 - Swipe directions are normalized so navigation matches on-screen direction in flipped modes.
 
@@ -108,22 +110,30 @@ NWS Alerts (Current)
 - NWS calls include required headers:
   - `User-Agent`
   - `Accept: application/geo+json`
-- Current scope defaults to `area=MO`.
+- Current manual scope defaults to `area=MO`.
 - Backward compatibility: `state=XX` is accepted in config and auto-normalized to `area=XX`.
 - Alerts config is persisted in NVS:
   - `alerts_enabled`
+  - `alerts_auto_scope`
   - `nws_user_agent`
   - `nws_scope`
+  - `nws_zone` (cached auto-discovered forecast zone, e.g. `MOZ061`)
   - `flash_time` metadata
 - Alert config changes from console apply at runtime (no reboot required).
+- Auto-scope flow:
+  - geolocate via `https://ipapi.co/json/`
+  - resolve zone via `https://api.weather.gov/points/{lat},{lon}`
+  - poll alerts via `alerts/active?zone=<ZONE>`
 
 Console Commands for Alerts / Metadata
 --------------------------------------
 - `alerts show`
 - `alerts on`
 - `alerts off`
+- `alerts auto-scope on|off`
 - `alerts ua <user-agent>`
 - `alerts scope <scope>` (example: `area=MO`, `zone=MOZ061`)
+- `alerts zone show|clear`
 - `flash show`
 - `flash set-time <text>`
 
