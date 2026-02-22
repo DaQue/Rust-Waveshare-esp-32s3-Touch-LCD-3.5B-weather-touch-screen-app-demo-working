@@ -103,7 +103,7 @@ Troubleshooting
 
 Recent Orientation Updates (2026-02-21)
 ---------------------------------------
-- Firmware/package version is now `0.2.3`.
+- Firmware/package version is now `0.2.4`.
 - Runtime screen orientation now supports all 4 physical directions:
   - `Landscape` (USB right)
   - `LandscapeFlipped` (USB left)
@@ -156,7 +156,7 @@ NWS Alerts (Current)
 Console Commands for Alerts / Metadata
 --------------------------------------
 - `units show|f|c`
-- `version` (prints firmware version, e.g. `v0.2.3`)
+- `version` (prints firmware version, e.g. `v0.2.4`)
 - `about` (firmware/device summary plus `help` hint)
 - `beep advisory|watch|warning|stop` (speaker tone test / stop)
 - `alerts show`
