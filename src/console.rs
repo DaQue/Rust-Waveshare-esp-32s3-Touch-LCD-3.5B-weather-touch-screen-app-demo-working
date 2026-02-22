@@ -14,7 +14,7 @@ pub fn spawn_console(
 ) {
     std::thread::Builder::new()
         .name("console".into())
-        .stack_size(8192)
+        .stack_size(16384)
         .spawn(move || {
             info!("console: ready (type 'help') — use minicom Ctrl+A E for local echo");
             let stdin = io::stdin();
@@ -91,10 +91,15 @@ fn process_line(
         "i2c" => handle_i2c(sub),
         "imu" => handle_imu(sub),
         "debug" => handle_debug(sub),
+        "version" => {
+            info!("v{}", env!("CARGO_PKG_VERSION"));
+        }
+        "beep" => handle_beep(sub),
         "about" => {
             let cfg = config.lock().unwrap();
             info!("app: waveshare_s3_3p");
             info!("firmware: v{}", env!("CARGO_PKG_VERSION"));
+            info!("author: David (DaQue)");
             info!("device: Waveshare ESP32-S3 3.5B");
             info!("units: {}", if cfg.use_celsius { "C" } else { "F" });
             info!("query: {}", cfg.weather_query);
@@ -106,6 +111,7 @@ fn process_line(
             info!("uptime: {}h {}m", hours, mins);
             let heap_kb = unsafe { esp_idf_sys::esp_get_free_heap_size() } / 1024;
             info!("free heap: {} KB", heap_kb);
+            info!("hint: type 'help' for all commands");
         }
         "status" => {
             let cfg = config.lock().unwrap();
@@ -114,6 +120,7 @@ fn process_line(
             info!("query: {}", cfg.weather_query);
             info!("flash time: {}", cfg.flash_time);
             info!("alerts enabled: {}", cfg.alerts_enabled);
+            info!("alerts beep: {}", cfg.alerts_beep);
             info!("alerts auto-scope: {}", cfg.alerts_auto_scope);
             info!("alerts scope: {}", cfg.nws_scope);
             info!("alerts zone: {}", if cfg.nws_zone.is_empty() { "<unset>" } else { &cfg.nws_zone });
@@ -153,6 +160,7 @@ fn print_help() {
     info!("  secrets seed-local         - save wifi.local.rs values into NVS");
     info!("  alerts show                - show alert settings");
     info!("  alerts on|off              - enable/disable NWS alerts");
+    info!("  alerts beep on|off|show    - enable/disable alert beeps");
     info!("  alerts auto-scope on|off   - auto-discover NWS zone from Wi-Fi");
     info!("  alerts ua <user-agent>     - set NWS User-Agent");
     info!("  alerts scope <scope>       - set NWS scope (example: area=MO)");
@@ -164,9 +172,33 @@ fn print_help() {
     info!("  debug <module>             - toggle debug for module");
     info!("    modules: touch, bme280, wifi, weather, imu, all");
     info!("  debug show                 - show debug flag status");
+    info!("  beep advisory|watch|warning|stop - play/stop speaker test tone");
+    info!("  version                    - print firmware version");
     info!("  about                      - show firmware/device summary");
     info!("  status                     - show system status");
     info!("  reboot                     - reboot device");
+}
+
+fn handle_beep(sub: &str) {
+    match sub {
+        "advisory" => crate::debug_flags::request_beep_tone(0),
+        "watch" => crate::debug_flags::request_beep_tone(1),
+        "warning" => crate::debug_flags::request_beep_tone(2),
+        "stop" => {
+            crate::debug_flags::request_beep_stop();
+            info!("beep stop requested");
+            return;
+        }
+        "" | "show" => {
+            info!("usage: beep advisory|watch|warning|stop");
+            return;
+        }
+        _ => {
+            info!("usage: beep advisory|watch|warning|stop");
+            return;
+        }
+    }
+    info!("beep requested: {}", sub);
 }
 
 fn handle_debug(sub: &str) {
@@ -540,6 +572,7 @@ fn handle_alerts(
         "" | "show" => {
             let cfg = config.lock().unwrap();
             info!("alerts enabled: {}", cfg.alerts_enabled);
+            info!("alerts beep: {}", cfg.alerts_beep);
             info!("alerts auto-scope: {}", cfg.alerts_auto_scope);
             info!("alerts scope: {}", cfg.nws_scope);
             info!("alerts zone: {}", if cfg.nws_zone.is_empty() { "<unset>" } else { &cfg.nws_zone });
@@ -599,6 +632,26 @@ fn handle_alerts(
             config.lock().unwrap().alerts_auto_scope = enabled;
             info!("alerts auto-scope: {}", enabled);
         }
+        "beep" => {
+            let val = rest.trim().to_ascii_lowercase();
+            let enabled = match val.as_str() {
+                "on" | "1" | "true" | "enable" | "enabled" => true,
+                "off" | "0" | "false" | "disable" | "disabled" => false,
+                "" | "show" => {
+                    let cfg = config.lock().unwrap();
+                    info!("alerts beep: {}", cfg.alerts_beep);
+                    return Ok(());
+                }
+                _ => {
+                    info!("usage: alerts beep on|off|show");
+                    return Ok(());
+                }
+            };
+            let mut nvs = nvs.lock().unwrap();
+            Config::save_alerts_beep(&mut nvs, enabled)?;
+            config.lock().unwrap().alerts_beep = enabled;
+            info!("alerts beep: {}", enabled);
+        }
         "zone" => {
             let op = rest.trim().to_ascii_lowercase();
             match op.as_str() {
@@ -615,7 +668,7 @@ fn handle_alerts(
                 _ => info!("usage: alerts zone show|clear"),
             }
         }
-        _ => info!("usage: alerts show|on|off|auto-scope on|off|ua <user-agent>|scope <scope>|zone show|clear"),
+        _ => info!("usage: alerts show|on|off|beep on|off|show|auto-scope on|off|ua <user-agent>|scope <scope>|zone show|clear"),
     }
     Ok(())
 }

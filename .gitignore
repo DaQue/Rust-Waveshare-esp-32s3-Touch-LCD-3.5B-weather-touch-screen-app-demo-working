@@ -2,8 +2,11 @@
 **/target/
 /third_party/
 /.embuild/
+**/.embuild/
 wifi.local.rs
 wifi.local.rs_bu
 __pycache__/
 *.jpg
 *.png
+
+borg-nightly.sh

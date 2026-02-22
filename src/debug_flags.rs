@@ -13,6 +13,8 @@ pub static REQUEST_I2C_SCAN: AtomicBool = AtomicBool::new(false);
 pub static REQUEST_IMU_READ: AtomicBool = AtomicBool::new(false);
 pub static REQUEST_ORIENTATION_MODE: AtomicI8 = AtomicI8::new(-1);
 pub static REQUEST_ORIENTATION_FLIP: AtomicI8 = AtomicI8::new(-1);
+pub static REQUEST_BEEP_TONE: AtomicI8 = AtomicI8::new(-1);
+pub static REQUEST_BEEP_STOP: AtomicBool = AtomicBool::new(false);
 
 pub fn is_on(flag: &AtomicBool) -> bool {
     flag.load(Ordering::Relaxed)
@@ -67,4 +69,24 @@ pub fn take_orientation_flip_request() -> Option<bool> {
         1 => Some(true),
         _ => None,
     }
+}
+
+pub fn request_beep_tone(tone: i8) {
+    REQUEST_BEEP_STOP.store(false, Ordering::Relaxed);
+    REQUEST_BEEP_TONE.store(tone, Ordering::Relaxed);
+}
+
+pub fn take_beep_tone_request() -> Option<i8> {
+    match REQUEST_BEEP_TONE.swap(-1, Ordering::Relaxed) {
+        v @ (0 | 1 | 2) => Some(v),
+        _ => None,
+    }
+}
+
+pub fn request_beep_stop() {
+    REQUEST_BEEP_STOP.store(true, Ordering::Relaxed);
+}
+
+pub fn take_beep_stop_request() -> bool {
+    REQUEST_BEEP_STOP.swap(false, Ordering::Relaxed)
 }

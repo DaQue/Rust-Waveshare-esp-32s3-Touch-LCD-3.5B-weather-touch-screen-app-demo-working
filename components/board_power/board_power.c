@@ -12,6 +12,7 @@
 #define TCA9554_REG_OUTPUT 0x01
 #define TCA9554_REG_CONFIG 0x03
 #define TCA9554_LCD_RST_BIT (1U << 1)
+#define TCA9554_PA_CTRL_BIT (1U << 7)
 
 static const char *TAG = "board_power";
 
@@ -57,6 +58,27 @@ esp_err_t board_ioexpander_lcd_reset(i2c_port_t port)
     vTaskDelay(pdMS_TO_TICKS(200));
 
     ESP_LOGI(TAG, "TCA9554 LCD reset pulse complete");
+    return ESP_OK;
+}
+
+esp_err_t board_ioexpander_set_pa(uint8_t enable)
+{
+    i2c_port_t port = (i2c_port_t)I2C_PORT_NUM;
+    uint8_t config = 0xFF;
+    ESP_RETURN_ON_ERROR(tca9554_read_reg(port, TCA9554_REG_CONFIG, &config), TAG, "read config failed");
+    config &= (uint8_t)~TCA9554_PA_CTRL_BIT;
+    ESP_RETURN_ON_ERROR(tca9554_write_reg(port, TCA9554_REG_CONFIG, config), TAG, "write config failed");
+
+    uint8_t output = 0xFF;
+    ESP_RETURN_ON_ERROR(tca9554_read_reg(port, TCA9554_REG_OUTPUT, &output), TAG, "read output failed");
+    if (enable) {
+        output |= TCA9554_PA_CTRL_BIT;
+    } else {
+        output &= (uint8_t)~TCA9554_PA_CTRL_BIT;
+    }
+    ESP_RETURN_ON_ERROR(tca9554_write_reg(port, TCA9554_REG_OUTPUT, output), TAG, "write output failed");
+
+    ESP_LOGI(TAG, "PA control via TCA9554: %s", enable ? "ON" : "OFF");
     return ESP_OK;
 }
 

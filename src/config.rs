@@ -14,6 +14,7 @@ const KEY_ORIENTATION: &str = "orientation";
 const KEY_ORIENTATION_FLIP: &str = "ori_flip";
 const KEY_FLASH_TIME: &str = "flash_time";
 const KEY_ALERTS_ENABLED: &str = "alerts_en";
+const KEY_ALERTS_BEEP: &str = "alerts_beep";
 const KEY_ALERTS_AUTO_SCOPE: &str = "al_auto";
 const KEY_NWS_USER_AGENT: &str = "nws_ua";
 const KEY_NWS_SCOPE: &str = "nws_scope";
@@ -26,6 +27,7 @@ const DEFAULT_WEATHER_QUERY: &str = "zip=00000,US";
 const DEFAULT_TIMEZONE: &str = "CST6CDT,M3.2.0,M11.1.0";
 const DEFAULT_USE_CELSIUS: bool = false;
 const DEFAULT_ALERTS_ENABLED: bool = true;
+const DEFAULT_ALERTS_BEEP: bool = true;
 const DEFAULT_ALERTS_AUTO_SCOPE: bool = true;
 const DEFAULT_FLASH_TIME: &str = "unknown";
 const DEFAULT_NWS_USER_AGENT: &str =
@@ -69,6 +71,7 @@ pub struct Config {
     pub orientation_flip: bool,
     pub flash_time: String,
     pub alerts_enabled: bool,
+    pub alerts_beep: bool,
     pub alerts_auto_scope: bool,
     pub nws_user_agent: String,
     pub nws_scope: String,
@@ -175,6 +178,12 @@ impl Config {
             .map(|v| v != 0)
             .unwrap_or(DEFAULT_ALERTS_ENABLED);
         info!("NVS alerts_enabled = {}", alerts_enabled);
+        let alerts_beep = nvs
+            .get_u8(KEY_ALERTS_BEEP)
+            .unwrap_or(None)
+            .map(|v| v != 0)
+            .unwrap_or(DEFAULT_ALERTS_BEEP);
+        info!("NVS alerts_beep = {}", alerts_beep);
         let alerts_auto_scope = nvs
             .get_u8(KEY_ALERTS_AUTO_SCOPE)
             .unwrap_or(None)
@@ -201,6 +210,7 @@ impl Config {
             orientation_flip,
             flash_time,
             alerts_enabled,
+            alerts_beep,
             alerts_auto_scope,
             nws_user_agent,
             nws_scope,
@@ -264,6 +274,12 @@ impl Config {
     pub fn save_alerts_enabled(nvs: &mut EspNvs<NvsDefault>, enabled: bool) -> Result<()> {
         nvs.set_u8(KEY_ALERTS_ENABLED, if enabled { 1 } else { 0 })?;
         info!("NVS saved alerts_enabled={}", enabled);
+        Ok(())
+    }
+
+    pub fn save_alerts_beep(nvs: &mut EspNvs<NvsDefault>, enabled: bool) -> Result<()> {
+        nvs.set_u8(KEY_ALERTS_BEEP, if enabled { 1 } else { 0 })?;
+        info!("NVS saved alerts_beep={}", enabled);
         Ok(())
     }
 

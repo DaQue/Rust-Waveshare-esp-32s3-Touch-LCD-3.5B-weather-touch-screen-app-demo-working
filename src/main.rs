@@ -6,6 +6,7 @@ mod framebuffer;
 mod http_client;
 mod layout;
 mod qmi8658;
+mod speaker;
 mod touch;
 mod time_sync;
 mod views;
@@ -40,6 +41,10 @@ const PIN_LCD_D2: i32 = 3;
 const PIN_LCD_D3: i32 = 4;
 const PIN_LCD_CS: i32 = 12;
 const PIN_LCD_BL: i32 = 6;
+const PIN_I2S_BCLK: i32 = 13;
+const PIN_I2S_DOUT: i32 = 16;
+const PIN_I2S_WS: i32 = 15;
+const PIN_I2S_MCLK: i32 = 44;
 
 // ── I2C ──────────────────────────────────────────────────────────────
 const I2C_FREQ_HZ: u32 = 100_000;
@@ -49,6 +54,8 @@ const WEATHER_INTERVAL_SECS: u64 = 600;
 const WEATHER_RETRY_SECS: u64 = 30;
 const WEATHER_STALE_AFTER_SECS: u64 = WEATHER_INTERVAL_SECS + 120;
 const ALERTS_INTERVAL_SECS: u64 = 180;
+const ALERTS_START_DELAY_SECS: u64 = 20;
+const ALERT_BEEP_COOLDOWN_SECS: u64 = 600;
 const BME280_INTERVAL_MS: u32 = 5_000;
 const TICK_MS: u64 = 100;
 const TIME_UPDATE_TICKS: u32 = 10; // every second
@@ -249,6 +256,40 @@ fn esp_check(res: esp_idf_sys::esp_err_t, msg: &str) -> Result<()> {
 
 fn now_ms() -> u32 {
     unsafe { (esp_idf_sys::esp_timer_get_time() / 1000) as u32 }
+}
+
+fn alert_fingerprint(alerts: &[weather::WeatherAlert]) -> String {
+    let mut parts: Vec<String> = alerts
+        .iter()
+        .map(|a| format!("{}|{}|{}|{}", a.id, a.event, a.expires, a.severity))
+        .collect();
+    parts.sort_unstable();
+    parts.join("||")
+}
+
+fn alert_tone_for(alerts: &[weather::WeatherAlert]) -> speaker::AlertTone {
+    let mut rank = 0u8;
+    for alert in alerts {
+        let severity = alert.severity.to_ascii_lowercase();
+        let local_rank = if severity.contains("extreme")
+            || severity.contains("severe")
+            || alert.kind() == weather::AlertKind::Warning
+        {
+            3
+        } else if severity.contains("moderate") || alert.kind() == weather::AlertKind::Watch {
+            2
+        } else {
+            1
+        };
+        if local_rank > rank {
+            rank = local_rank;
+        }
+    }
+    match rank {
+        3 => speaker::AlertTone::Warning,
+        2 => speaker::AlertTone::Watch,
+        _ => speaker::AlertTone::Advisory,
+    }
 }
 
 fn locked_orientation(mode: config::OrientationMode, flip: bool) -> layout::Orientation {
@@ -568,6 +609,12 @@ fn main() -> Result<()> {
 
     let i2c_devices = scan_i2c(&mut i2c);
 
+    if let Err(e) = speaker::init_audio_path(&mut i2c) {
+        log::warn!("Audio path init failed (PA + ES8311): {}", e);
+    } else {
+        info!("Audio path initialized (PA enabled + ES8311 ready)");
+    }
+
     // ── 7. BME280 sensor ──
     let bme280 = bme280_sensor::Bme280::init(&mut i2c);
     if bme280.is_some() {
@@ -580,6 +627,28 @@ fn main() -> Result<()> {
     // ── 9. Touch controller ──
     touch::probe(&mut i2c);
     let mut touch_state = touch::TouchState::new();
+
+    // ── 9a. Speaker / tone output (I2S -> ES8311 path) ──
+    let mut speaker = match speaker::Speaker::new(
+        peripherals.i2s0,
+        peripherals.pins.gpio13,
+        peripherals.pins.gpio16,
+        peripherals.pins.gpio15,
+        Some(peripherals.pins.gpio44),
+    ) {
+        Ok(s) => {
+            info!(
+                "Speaker I2S initialized (BCLK={} DOUT={} WS={} MCLK={})",
+                PIN_I2S_BCLK, PIN_I2S_DOUT, PIN_I2S_WS, PIN_I2S_MCLK
+            );
+            info!("Note: ES8311 register init/PA control may still be required for audible output");
+            Some(s)
+        }
+        Err(e) => {
+            log::warn!("Speaker I2S init failed: {}", e);
+            None
+        }
+    };
 
     // ── 9. WiFi ──
     let mut ip_address = String::new();
@@ -782,6 +851,11 @@ fn main() -> Result<()> {
             .name("alerts".into())
             .stack_size(12288)
             .spawn(move || {
+                info!(
+                    "NWS alerts thread startup delay: {}s",
+                    ALERTS_START_DELAY_SECS
+                );
+                std::thread::sleep(Duration::from_secs(ALERTS_START_DELAY_SECS));
                 let mut consecutive_failures: u32 = 0;
                 loop {
                     let (enabled, auto_scope, scope, cached_zone, ua) = {
@@ -878,6 +952,9 @@ fn main() -> Result<()> {
     let mut last_orientation_change_ms: u32 = now_ms();
     let mut last_wifi_retry_ms: u32 = now_ms();
     let mut last_weather_success_ms: Option<u32> = None;
+    let mut alerts_snapshot_seen = false;
+    let mut last_alert_fingerprint = String::new();
+    let mut last_alert_beep_ms: Option<u32> = None;
 
     // Initial draw
     views::draw_current_view(&mut fb, &state);
@@ -950,10 +1027,39 @@ fn main() -> Result<()> {
         // Check for alert data from background thread
         if let Ok(mut ad) = alert_data.try_lock() {
             if let Some(alerts) = ad.take() {
+                let fp = alert_fingerprint(&alerts);
+                let changed = !alerts_snapshot_seen || fp != last_alert_fingerprint;
+                let beep_enabled = cfg.lock().unwrap().alerts_beep;
+                if changed && alerts_snapshot_seen && !alerts.is_empty() && beep_enabled {
+                    let now = now_ms();
+                    let can_beep = last_alert_beep_ms
+                        .map(|ts| now.wrapping_sub(ts) >= (ALERT_BEEP_COOLDOWN_SECS as u32 * 1000))
+                        .unwrap_or(true);
+                    if can_beep {
+                        let tone = alert_tone_for(&alerts);
+                        if let Some(spk) = speaker.as_mut() {
+                            match spk.play(tone, crate::debug_flags::take_beep_stop_request) {
+                                Ok(()) => {
+                                    info!(
+                                        "alerts beep: {} ({} active)",
+                                        tone.as_str(),
+                                        alerts.len()
+                                    );
+                                    last_alert_beep_ms = Some(now);
+                                }
+                                Err(e) => log::warn!("alerts beep failed: {}", e),
+                            }
+                        }
+                    } else {
+                        info!("alerts changed but beep is in cooldown");
+                    }
+                }
                 state.weather_alerts = alerts;
                 if state.weather_alerts.is_empty() {
                     state.now_alerts_open = false;
                 }
+                last_alert_fingerprint = fp;
+                alerts_snapshot_seen = true;
                 state.dirty = true;
             }
         }
@@ -973,6 +1079,20 @@ fn main() -> Result<()> {
                 }
             } else {
                 info!("IMU: not initialized");
+            }
+        }
+
+        // Speaker tone test requested from console
+        if let Some(code) = debug_flags::take_beep_tone_request() {
+            if let Some(tone) = speaker::AlertTone::from_request(code) {
+                if let Some(spk) = speaker.as_mut() {
+                    match spk.play(tone, crate::debug_flags::take_beep_stop_request) {
+                        Ok(()) => info!("beep: {}", tone.as_str()),
+                        Err(e) => log::warn!("speaker beep failed: {}", e),
+                    }
+                } else {
+                    log::warn!("speaker: not initialized");
+                }
             }
         }
 

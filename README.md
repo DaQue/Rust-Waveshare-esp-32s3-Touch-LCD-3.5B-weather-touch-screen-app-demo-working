@@ -111,7 +111,7 @@ Troubleshooting
 
 Recent Orientation Updates (2026-02-21)
 ---------------------------------------
-- Firmware/package version is now `0.2.2`.
+- Firmware/package version is now `0.2.3`.
 - Runtime screen orientation now supports all 4 physical directions:
   - `Landscape` (USB right)
   - `LandscapeFlipped` (USB left)
@@ -164,9 +164,13 @@ NWS Alerts (Current)
 Console Commands for Alerts / Metadata
 --------------------------------------
 - `units show|f|c`
+- `version` (prints firmware version, e.g. `v0.2.3`)
+- `about` (firmware/device summary plus `help` hint)
+- `beep advisory|watch|warning|stop` (speaker tone test / stop)
 - `alerts show`
 - `alerts on`
 - `alerts off`
+- `alerts beep on|off|show`
 - `alerts auto-scope on|off`
 - `alerts ua <user-agent>`
 - `alerts scope <scope>` (example: `area=MO`, `zone=MOZ061`)
@@ -183,3 +187,22 @@ Now View Alert UX
 - Tapping weather icon:
   - No alerts: weather refresh
   - Alerts present: open/close alert details overlay
+
+Problems Encountered and Fixes
+------------------------------
+- Audio output was initially silent even though `beep` commands were accepted.
+  - Root cause: I2S TX data pin mismatch and codec/path setup differences from factory behavior.
+  - Fixes:
+    - Switched I2S TX output to the factory-working data pin (`GPIO16`).
+    - Kept audio path initialization explicit (PA enable + ES8311 init).
+    - Aligned tone path to 48 kHz and tuned tone envelopes/patterns.
+- Audio tones initially could continue longer than expected.
+  - Root cause: I2S/DMA path could hold non-zero samples after command completion.
+  - Fixes:
+    - Enabled channel auto-clear.
+    - Explicitly flushed silence after tones and on stop path.
+    - Added `beep stop` console command.
+- Startup watchdog warnings occurred during concurrent TLS handshakes.
+  - Root cause: weather and alerts HTTPS handshakes started at nearly the same time.
+  - Fix:
+    - Added startup delay before first alerts poll to avoid handshake collision.
