@@ -492,7 +492,7 @@ pub fn fetch_weather(
         query, api_key
     );
     let forecast_url = format!(
-        "https://api.openweathermap.org/data/2.5/forecast?{}&units=imperial&appid={}",
+        "https://api.openweathermap.org/data/2.5/forecast?{}&units=imperial&cnt=32&appid={}",
         query, api_key
     );
 

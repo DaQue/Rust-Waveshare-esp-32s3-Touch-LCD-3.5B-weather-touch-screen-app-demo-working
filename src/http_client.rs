@@ -1,8 +1,10 @@
 use anyhow::{bail, Result};
 use esp_idf_svc::http::client::{Configuration, EspHttpConnection};
 use log::info;
+use std::sync::{Mutex, OnceLock};
 
 const TIMEOUT_MS: u64 = 15_000;
+static HTTP_REQUEST_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
 /// Perform an HTTPS GET request and return the response body as a String.
 pub fn https_get(url: &str) -> Result<String> {
@@ -11,6 +13,11 @@ pub fn https_get(url: &str) -> Result<String> {
 
 /// Perform an HTTPS GET request with custom headers and return body as String.
 pub fn https_get_with_headers(url: &str, headers: &[(&str, &str)]) -> Result<String> {
+    // ESP32-S3 + TLS can hit transient resource pressure when multiple HTTPS
+    // handshakes are attempted concurrently. Serialize requests across threads.
+    let lock = HTTP_REQUEST_LOCK.get_or_init(|| Mutex::new(()));
+    let _guard = lock.lock().map_err(|_| anyhow::anyhow!("HTTP lock poisoned"))?;
+
     let config = Configuration {
         timeout: Some(std::time::Duration::from_millis(TIMEOUT_MS)),
         use_global_ca_store: true,
@@ -48,7 +55,7 @@ pub fn https_get_with_headers(url: &str, headers: &[(&str, &str)]) -> Result<Str
             bail!("Response too large (>32KB)");
         }
         body
-            .try_reserve(n)
+            .try_reserve_exact(n)
             .map_err(|_| anyhow::anyhow!("Out of memory while reading HTTP response"))?;
         body.extend_from_slice(&buf[..n]);
     }
