@@ -112,6 +112,14 @@ pub fn local_secret_fallbacks() -> (Option<String>, Option<String>, Option<Strin
     )
 }
 
+pub fn weather_query_needs_autodiscovery(query: &str) -> bool {
+    let q = query.trim();
+    q.is_empty()
+        || q.eq_ignore_ascii_case(DEFAULT_WEATHER_QUERY)
+        || q.eq_ignore_ascii_case("q=New York,US")
+        || q.eq_ignore_ascii_case("q=New York")
+}
+
 impl Config {
     /// Load configuration from NVS, falling back to defaults for any missing
     /// keys.

@@ -111,7 +111,7 @@ Troubleshooting
 
 Recent Orientation Updates (2026-02-21)
 ---------------------------------------
-- Firmware/package version is now `0.2.1`.
+- Firmware/package version is now `0.2.2`.
 - Runtime screen orientation now supports all 4 physical directions:
   - `Landscape` (USB right)
   - `LandscapeFlipped` (USB left)

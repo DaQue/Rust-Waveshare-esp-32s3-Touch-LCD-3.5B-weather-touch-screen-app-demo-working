@@ -543,15 +543,15 @@ fn main() -> Result<()> {
     }
     let wifi_ssid = cfg.wifi_ssid.clone();
     let wifi_pass = cfg.wifi_pass.clone();
-    let api_key = cfg.weather_api_key.clone();
-    let weather_query = cfg.weather_query.clone();
     let timezone = cfg.timezone.clone();
 
     let nvs = Arc::new(Mutex::new(nvs));
     let cfg = Arc::new(Mutex::new(cfg));
 
+    let weather_refresh_flag: Arc<AtomicBool> = Arc::new(AtomicBool::new(false));
+
     // ── 5. Console (serial interactive) ──
-    console::spawn_console(nvs.clone(), cfg.clone());
+    console::spawn_console(nvs.clone(), cfg.clone(), weather_refresh_flag.clone());
 
     // ── 6. I2C bus ──
     // board_power_init() already installed an I2C driver on port 0 for the PMIC.
@@ -623,6 +623,38 @@ fn main() -> Result<()> {
         None
     };
 
+    if wifi_ok {
+        let (needs_auto_query, user_agent, existing_query) = {
+            let c = cfg.lock().unwrap();
+            (
+                config::weather_query_needs_autodiscovery(&c.weather_query),
+                c.nws_user_agent.clone(),
+                c.weather_query.clone(),
+            )
+        };
+        if needs_auto_query {
+            info!("Weather query is unset/placeholder; attempting auto-discovery...");
+            match weather::discover_openweather_query(&user_agent) {
+                Ok(query) => {
+                    if let Err(e) = config::Config::save_weather_query(&mut nvs.lock().unwrap(), &query)
+                    {
+                        log::warn!("Failed to save auto-discovered weather query: {}", e);
+                    } else {
+                        cfg.lock().unwrap().weather_query = query.clone();
+                        info!("Auto-discovered weather query: {}", query);
+                        weather_refresh_flag.store(true, Ordering::Relaxed);
+                    }
+                }
+                Err(e) => log::warn!("Weather auto-discovery failed: {}", e),
+            }
+        } else {
+            info!(
+                "Weather query already set; skipping auto-discovery (wx_query={})",
+                existing_query
+            );
+        }
+    }
+
     // ── 11. App state ──
     let mut state = views::AppState::new();
     state.use_celsius = cfg.lock().unwrap().use_celsius;
@@ -664,21 +696,34 @@ fn main() -> Result<()> {
     // ── 12. Weather fetch thread ──
     let weather_data: Arc<Mutex<Option<(weather::CurrentWeather, weather::Forecast)>>> =
         Arc::new(Mutex::new(None));
-    let weather_refresh_flag: Arc<AtomicBool> = Arc::new(AtomicBool::new(false));
-
-    if !api_key.is_empty() {
+    {
         let wd = weather_data.clone();
         let refresh = weather_refresh_flag.clone();
-        let query = weather_query.clone();
-        let key = api_key.clone();
+        let cfg_weather = cfg.clone();
         std::thread::Builder::new()
             .name("weather".into())
             .stack_size(16384)
             .spawn(move || {
                 let mut first = true;
+                let mut warned_missing_key = false;
                 let mut consecutive_failures: u32 = 0;
                 loop {
-                    let verbose = first || crate::debug_flags::is_on(&crate::debug_flags::DEBUG_WEATHER);
+                    let (query, key) = {
+                        let c = cfg_weather.lock().unwrap();
+                        (c.weather_query.clone(), c.weather_api_key.clone())
+                    };
+                    if key.is_empty() {
+                        if !warned_missing_key {
+                            log::warn!("No weather API key (use console: api set-key <key>)");
+                            warned_missing_key = true;
+                        }
+                        std::thread::sleep(Duration::from_secs(WEATHER_RETRY_SECS));
+                        continue;
+                    }
+                    warned_missing_key = false;
+
+                    let verbose =
+                        first || crate::debug_flags::is_on(&crate::debug_flags::DEBUG_WEATHER);
                     if verbose {
                         info!("Weather fetch starting...");
                     }
@@ -687,7 +732,9 @@ fn main() -> Result<()> {
                             if verbose {
                                 info!(
                                     "Weather: {}°F {} in {} ({} forecast days)",
-                                    current.temp_f as i32, current.condition, current.city,
+                                    current.temp_f as i32,
+                                    current.condition,
+                                    current.city,
                                     forecast.rows.len()
                                 );
                             }
@@ -723,8 +770,6 @@ fn main() -> Result<()> {
                 }
             })
             .expect("failed to spawn weather thread");
-    } else if api_key.is_empty() {
-        log::warn!("No weather API key (use console: api set-key <key>)");
     }
 
     // ── 12b. NWS alerts fetch thread ──

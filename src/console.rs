@@ -2,11 +2,16 @@ use anyhow::Result;
 use esp_idf_svc::nvs::{EspNvs, NvsDefault};
 use log::{info, warn};
 use std::io::{self, Read};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use crate::config::Config;
 
-pub fn spawn_console(nvs: Arc<Mutex<EspNvs<NvsDefault>>>, config: Arc<Mutex<Config>>) {
+pub fn spawn_console(
+    nvs: Arc<Mutex<EspNvs<NvsDefault>>>,
+    config: Arc<Mutex<Config>>,
+    weather_refresh_flag: Arc<AtomicBool>,
+) {
     std::thread::Builder::new()
         .name("console".into())
         .stack_size(8192)
@@ -36,7 +41,8 @@ pub fn spawn_console(nvs: Arc<Mutex<EspNvs<NvsDefault>>>, config: Arc<Mutex<Conf
                                 continue;
                             }
                             info!("> {}", line);
-                            if let Err(e) = process_line(&line, &nvs, &config) {
+                            if let Err(e) = process_line(&line, &nvs, &config, &weather_refresh_flag)
+                            {
                                 warn!("console: error: {}", e);
                             }
                             line.clear();
@@ -62,6 +68,7 @@ fn process_line(
     line: &str,
     nvs: &Arc<Mutex<EspNvs<NvsDefault>>>,
     config: &Arc<Mutex<Config>>,
+    weather_refresh_flag: &Arc<AtomicBool>,
 ) -> Result<()> {
     let clean = line.trim().trim_end_matches('\\');
     if clean.is_empty() {
@@ -75,7 +82,7 @@ fn process_line(
     match cmd {
         "help" | "?" => print_help(),
         "wifi" => handle_wifi(sub, rest, nvs, config)?,
-        "api" => handle_api(sub, rest, nvs, config)?,
+        "api" => handle_api(sub, rest, nvs, config, weather_refresh_flag)?,
         "units" => handle_units(sub, nvs, config)?,
         "secrets" => handle_secrets(sub, nvs, config)?,
         "alerts" => handle_alerts(sub, rest, nvs, config)?,
@@ -84,6 +91,22 @@ fn process_line(
         "i2c" => handle_i2c(sub),
         "imu" => handle_imu(sub),
         "debug" => handle_debug(sub),
+        "about" => {
+            let cfg = config.lock().unwrap();
+            info!("app: waveshare_s3_3p");
+            info!("firmware: v{}", env!("CARGO_PKG_VERSION"));
+            info!("device: Waveshare ESP32-S3 3.5B");
+            info!("units: {}", if cfg.use_celsius { "C" } else { "F" });
+            info!("query: {}", cfg.weather_query);
+            info!("orientation: {}", cfg.orientation_mode.as_str());
+            info!("orientation flip: {}", if cfg.orientation_flip { "on" } else { "off" });
+            let uptime_secs = unsafe { esp_idf_sys::esp_timer_get_time() } / 1_000_000;
+            let hours = uptime_secs / 3600;
+            let mins = (uptime_secs % 3600) / 60;
+            info!("uptime: {}h {}m", hours, mins);
+            let heap_kb = unsafe { esp_idf_sys::esp_get_free_heap_size() } / 1024;
+            info!("free heap: {} KB", heap_kb);
+        }
         "status" => {
             let cfg = config.lock().unwrap();
             info!("wifi: {}", if cfg.wifi_ssid.is_empty() { "not configured" } else { &cfg.wifi_ssid });
@@ -141,6 +164,7 @@ fn print_help() {
     info!("  debug <module>             - toggle debug for module");
     info!("    modules: touch, bme280, wifi, weather, imu, all");
     info!("  debug show                 - show debug flag status");
+    info!("  about                      - show firmware/device summary");
     info!("  status                     - show system status");
     info!("  reboot                     - reboot device");
 }
@@ -388,6 +412,7 @@ fn handle_api(
     rest: &str,
     nvs: &Arc<Mutex<EspNvs<NvsDefault>>>,
     config: &Arc<Mutex<Config>>,
+    weather_refresh_flag: &Arc<AtomicBool>,
 ) -> Result<()> {
     match sub {
         "show" => {
@@ -416,7 +441,8 @@ fn handle_api(
                 format!("****{}", &key[key.len() - 4..])
             };
             info!("saved: api key='{}' ({} chars)", display, key.len());
-            info!("type 'reboot' to apply");
+            weather_refresh_flag.store(true, Ordering::Relaxed);
+            info!("weather refresh requested");
         }
         "set-query" => {
             let query = rest.trim().trim_matches('"').trim_matches('\'');
@@ -428,7 +454,8 @@ fn handle_api(
             Config::save_weather_query(&mut nvs, query)?;
             config.lock().unwrap().weather_query = query.to_string();
             info!("saved: api query='{}'", query);
-            info!("type 'reboot' to apply");
+            weather_refresh_flag.store(true, Ordering::Relaxed);
+            info!("weather refresh requested");
         }
         "clear" => {
             let mut nvs = nvs.lock().unwrap();
@@ -438,6 +465,8 @@ fn handle_api(
             cfg.weather_api_key.clear();
             cfg.weather_query = "q=New York,US".to_string();
             info!("API overrides cleared (defaults restored)");
+            weather_refresh_flag.store(true, Ordering::Relaxed);
+            info!("weather refresh requested");
         }
         _ => print_help(),
     }
