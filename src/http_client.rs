@@ -36,7 +36,7 @@ pub fn https_get_with_headers(url: &str, headers: &[(&str, &str)]) -> Result<Str
         bail!("HTTP error: status {}", status);
     }
 
-    let mut body: Vec<u8> = Vec::new();
+    let mut body: Vec<u8> = Vec::with_capacity(4096);
     let mut buf = [0u8; 1024];
     let mut reader = request;
     loop {
@@ -44,10 +44,13 @@ pub fn https_get_with_headers(url: &str, headers: &[(&str, &str)]) -> Result<Str
         if n == 0 {
             break;
         }
-        body.extend_from_slice(&buf[..n]);
-        if body.len() > 32768 {
+        if body.len().saturating_add(n) > 32768 {
             bail!("Response too large (>32KB)");
         }
+        body
+            .try_reserve(n)
+            .map_err(|_| anyhow::anyhow!("Out of memory while reading HTTP response"))?;
+        body.extend_from_slice(&buf[..n]);
     }
 
     let text = String::from_utf8(body)?;

@@ -1,42 +1,54 @@
-Waveshare ESP32-S3 3.5" Weather Station Bring-up
-=================================================
+Waveshare ESP32-S3 Touch LCD 3.5B Weather Demo (Rust + ESP-IDF)
+=================================================================
 
-This repo is a bring-up playground for an ESP32-S3 board. It currently focuses on
-LCD bring-up with a trial harness.
+This project is a practical reference/demo for getting the Waveshare
+ESP32-S3-Touch-LCD-3.5B running in Rust. It is intended as a working baseline
+you can build from, not a polished end-user product.
 
-Features
---------
-- ESP-IDF + Rust std setup
-- USB-Serial-JTAG input for mode selection and trial annotations
-- Auto sweep mode (unattended) and interactive sweep mode
-- NVS persistence of last trial marker, last mode, last result, and auto sweep count
-- Per-trial display reset/cleanup for repeatable bring-up checks
+Intended Scope
+--------------
+- Show a complete, working Rust firmware path for this board:
+  - display init + rendering
+  - touch input
+  - Wi-Fi + HTTPS
+  - weather + forecast + NWS alerts
+  - console configuration commands
+  - optional speaker/beep alerts
+- Provide a reproducible starting point for your own app work on this hardware.
+
+Current Features
+----------------
+- Weather dashboard with current conditions + forecast view
+- NWS alerts fetch with optional auto-scope discovery and alert beeps
+- Touch navigation and orientation support (landscape/portrait/flipped/auto)
+- NVS-persisted config (Wi-Fi, API, units, alerts, orientation, metadata)
+- Encrypted NVS support
+- Serial console commands (`help`) for runtime configuration and diagnostics
 
 Prereqs
 -------
-- ESP Rust toolchain installed via `espup`
-- ESP environment vars available from `/home/david/export-esp.sh`
+- ESP Rust/ESP-IDF toolchain installed
+- For this setup, environment is commonly loaded from `/home/david/export-esp.sh`
 
 Build
 -----
+Preferred build used in this repo:
 ```
-source /home/david/export-esp.sh
-cargo +esp build -Zbuild-std=std,panic_abort
+cargo build --target xtensa-esp32s3-espidf --release
 ```
 
 Flash + Monitor
---------------
+---------------
+Preferred flash/monitor flow:
 ```
-source /home/david/export-esp.sh
-cargo +esp run -Zbuild-std=std,panic_abort
+cargo run --target xtensa-esp32s3-espidf --release -- -p /dev/ttyACM0
 ```
 
-If `sudo` is required for USB access, use the helper:
+Optional helper script:
 ```
 ./scripts/flash.sh
 ```
-
-To skip sudo (if you already have device permissions):
+or without sudo:
 ```
 ./scripts/flash.sh --no-sudo
 ```
@@ -76,26 +88,6 @@ NVS Encryption Transition (No Retyping)
   - units: Fahrenheit (`F`)
   - alerts: enabled
   - alerts auto-scope: enabled
-
-Trial Flow
-----------
-1) Open the monitor (via `cargo +esp run ...` or `./scripts/flash.sh`).
-2) At boot, the firmware prompts and waits until you enter a valid mode:
-   - `a` (default): auto mode, resume from saved trial
-   - `a1`: auto mode from trial #1
-   - `i`: interactive mode, resume from saved trial
-   - `i1`: interactive mode from trial #1
-   - `i <n>`: interactive mode from trial `n`
-3) Each trial shows solid green, then a blue box with a yellow X.
-4) In interactive mode, enter result codes:
-   - `p`, `px`, `pxb`, `gx`, `gxb`, `pbn`, `vjg`, `vjb`, `hjgb`, `hjbb`, `n`, `b`
-5) In interactive mode, control commands:
-   - `r` rerun current trial
-   - `jmp <n>` jump to trial `n`
-   - `nvs` print persisted marker/state
-   - `q` quit interactive mode
-   - `h` show help
-6) The harness prints progress with base trial number as `#/N` and resets/cleans up between trials.
 
 Notes
 -----
@@ -206,3 +198,7 @@ Problems Encountered and Fixes
   - Root cause: weather and alerts HTTPS handshakes started at nearly the same time.
   - Fix:
     - Added startup delay before first alerts poll to avoid handshake collision.
+- A render-loop watchdog warning appeared during some icon-heavy draws.
+  - Root cause: long uninterrupted pixel loops could starve lower-priority task scheduling.
+  - Fix:
+    - Added cooperative yields during large framebuffer draw/fill loops.

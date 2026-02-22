@@ -641,7 +641,6 @@ fn main() -> Result<()> {
                 "Speaker I2S initialized (BCLK={} DOUT={} WS={} MCLK={})",
                 PIN_I2S_BCLK, PIN_I2S_DOUT, PIN_I2S_WS, PIN_I2S_MCLK
             );
-            info!("Note: ES8311 register init/PA control may still be required for audible output");
             Some(s)
         }
         Err(e) => {
@@ -824,7 +823,14 @@ fn main() -> Result<()> {
                             } else {
                                 info!("Weather fetch failed ({} consecutive)", consecutive_failures);
                             }
-                            std::thread::sleep(Duration::from_secs(WEATHER_RETRY_SECS));
+                            // Retry sleep that can be interrupted by a manual refresh request.
+                            for _ in 0..WEATHER_RETRY_SECS {
+                                if refresh.swap(false, Ordering::Relaxed) {
+                                    info!("Weather refresh requested");
+                                    break;
+                                }
+                                std::thread::sleep(Duration::from_secs(1));
+                            }
                             continue;
                         }
                     }

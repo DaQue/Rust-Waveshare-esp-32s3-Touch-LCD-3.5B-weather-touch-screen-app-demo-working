@@ -78,7 +78,7 @@ pub fn request_beep_tone(tone: i8) {
 
 pub fn take_beep_tone_request() -> Option<i8> {
     match REQUEST_BEEP_TONE.swap(-1, Ordering::Relaxed) {
-        v @ (0 | 1 | 2) => Some(v),
+        v @ (0..=2) => Some(v),
         _ => None,
     }
 }
