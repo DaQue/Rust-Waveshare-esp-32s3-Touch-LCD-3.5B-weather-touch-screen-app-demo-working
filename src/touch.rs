@@ -81,7 +81,7 @@ impl TouchState {
             );
         }
 
-        let touch = read_touch(i2c, &mut self.err_count, self.poll_count);
+        let touch = read_touch(i2c, &mut self.err_count);
 
         if let Some((px, py)) = touch {
             let (x, y) = map_to_orientation(px, py, orientation);
@@ -153,7 +153,7 @@ impl TouchState {
 
 /// Read touch coordinates from the AXS15231B integrated touch controller.
 /// Returns Some((x, y)) in the native portrait panel coordinate space.
-fn read_touch(i2c: &mut I2cDriver<'_>, err_count: &mut u32, poll_count: u32) -> Option<(i16, i16)> {
+fn read_touch(i2c: &mut I2cDriver<'_>, err_count: &mut u32) -> Option<(i16, i16)> {
     let mut data = [0u8; 14];
 
     // Use write_read (repeated start) matching C factory i2c_master_transmit_receive
@@ -161,16 +161,9 @@ fn read_touch(i2c: &mut I2cDriver<'_>, err_count: &mut u32, poll_count: u32) -> 
         Ok(_) => {}
         Err(_) => {
             *err_count += 1;
+            dbg_touch!("TOUCH read error (errs={})", *err_count);
             return None;
         }
-    }
-
-    // Log raw bytes every 50 polls so we can see what idle looks like
-    if poll_count % 50 == 1 {
-        dbg_touch!(
-            "TOUCH raw: [{:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X}]",
-            data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7]
-        );
     }
 
     // Byte 1: number of touch points (valid: 1 or 2)
@@ -183,6 +176,12 @@ fn read_touch(i2c: &mut I2cDriver<'_>, err_count: &mut u32, poll_count: u32) -> 
     // Parse first touch point (bytes 2-5)
     let raw_x = (((data[2] & 0x0F) as u16) << 8) | data[3] as u16;
     let raw_y = (((data[4] & 0x0F) as u16) << 8) | data[5] as u16;
+
+    dbg_touch!(
+        "TOUCH raw touch: [{:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X}] points={} x={} y={}",
+        data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7],
+        num_points, raw_x, raw_y
+    );
 
     Some((raw_x as i16, raw_y as i16))
 }

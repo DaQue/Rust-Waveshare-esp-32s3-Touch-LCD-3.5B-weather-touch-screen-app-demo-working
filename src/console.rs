@@ -145,19 +145,25 @@ fn process_line(
 
 fn print_help() {
     info!("commands:");
+    info!("  [Basics]");
+    info!("  help                       - show this help");
+    info!("  status                     - show system status");
+    info!("  about                      - show firmware/device summary");
+    info!("  version                    - print firmware version");
+    info!("  reboot                     - reboot device");
+    info!("  [Wi-Fi / API]");
     info!("  wifi show                  - show Wi-Fi config");
     info!("  wifi set <ssid> <pass>     - set Wi-Fi credentials");
     info!("  wifi scan                  - scan for nearby networks");
     info!("  wifi clear                 - clear Wi-Fi override");
-    info!("  i2c scan                   - rescan I2C bus");
-    info!("  imu read                   - one-shot IMU reading");
     info!("  api show                   - show API config");
     info!("  api set-key <key>          - set OpenWeather API key");
     info!("  api set-query <query>      - set location query");
     info!("  api clear                  - clear API overrides");
-    info!("  units f|c|show             - set/show temperature units");
     info!("  secrets show               - show local fallback availability");
     info!("  secrets seed-local         - save wifi.local.rs values into NVS");
+    info!("  units f|c|show             - set/show temperature units");
+    info!("  [Alerts]");
     info!("  alerts show                - show alert settings");
     info!("  alerts on|off              - enable/disable NWS alerts");
     info!("  alerts beep on|off|show    - enable/disable alert beeps");
@@ -165,18 +171,17 @@ fn print_help() {
     info!("  alerts ua <user-agent>     - set NWS User-Agent");
     info!("  alerts scope <scope>       - set NWS scope (example: area=MO)");
     info!("  alerts zone show|clear     - show/clear cached zone");
+    info!("  [Hardware / Diagnostics]");
+    info!("  imu read                   - one-shot IMU reading");
+    info!("  i2c scan                   - rescan I2C bus");
+    info!("  debug <module>|on|off      - toggle/set debug logging");
+    info!("    modules: touch, bme280, wifi, weather, imu, all");
+    info!("  debug show                 - show debug flag status");
+    info!("  beep advisory|watch|warning|stop - play/stop speaker test tone");
     info!("  flash show                 - show flash metadata");
     info!("  flash set-time <text>      - set flash time metadata");
     info!("  orientation auto|landscape|portrait");
     info!("  orientation flip on|off|toggle|show");
-    info!("  debug <module>             - toggle debug for module");
-    info!("    modules: touch, bme280, wifi, weather, imu, all");
-    info!("  debug show                 - show debug flag status");
-    info!("  beep advisory|watch|warning|stop - play/stop speaker test tone");
-    info!("  version                    - print firmware version");
-    info!("  about                      - show firmware/device summary");
-    info!("  status                     - show system status");
-    info!("  reboot                     - reboot device");
 }
 
 fn handle_beep(sub: &str) {
@@ -206,6 +211,22 @@ fn handle_debug(sub: &str) {
     match sub {
         "show" | "" => {
             info!("debug: {}", status_line());
+        }
+        "on" => {
+            set(&DEBUG_TOUCH, true);
+            set(&DEBUG_BME280, true);
+            set(&DEBUG_WIFI, true);
+            set(&DEBUG_WEATHER, true);
+            set(&DEBUG_IMU, true);
+            info!("debug all: ON");
+        }
+        "off" => {
+            set(&DEBUG_TOUCH, false);
+            set(&DEBUG_BME280, false);
+            set(&DEBUG_WIFI, false);
+            set(&DEBUG_WEATHER, false);
+            set(&DEBUG_IMU, false);
+            info!("debug all: OFF");
         }
         "touch" => {
             let on = toggle(&DEBUG_TOUCH);
