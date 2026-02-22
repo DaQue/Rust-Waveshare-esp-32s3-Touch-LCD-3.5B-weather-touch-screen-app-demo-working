@@ -36,6 +36,14 @@ impl AlertTone {
             AlertTone::Warning => "warning",
         }
     }
+
+    pub fn request_code(self) -> i8 {
+        match self {
+            AlertTone::Advisory => 0,
+            AlertTone::Watch => 1,
+            AlertTone::Warning => 2,
+        }
+    }
 }
 
 pub struct Speaker<'d> {

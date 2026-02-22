@@ -629,25 +629,59 @@ fn main() -> Result<()> {
     let mut touch_state = touch::TouchState::new();
 
     // ── 9a. Speaker / tone output (I2S -> ES8311 path) ──
-    let mut speaker = match speaker::Speaker::new(
-        peripherals.i2s0,
-        peripherals.pins.gpio13,
-        peripherals.pins.gpio16,
-        peripherals.pins.gpio15,
-        Some(peripherals.pins.gpio44),
-    ) {
-        Ok(s) => {
-            info!(
-                "Speaker I2S initialized (BCLK={} DOUT={} WS={} MCLK={})",
-                PIN_I2S_BCLK, PIN_I2S_DOUT, PIN_I2S_WS, PIN_I2S_MCLK
-            );
-            Some(s)
-        }
-        Err(e) => {
-            log::warn!("Speaker I2S init failed: {}", e);
-            None
-        }
-    };
+    let speaker_ready = Arc::new(AtomicBool::new(false));
+    {
+        let speaker_ready = speaker_ready.clone();
+        let i2s0 = peripherals.i2s0;
+        let pin_bclk = peripherals.pins.gpio13;
+        let pin_dout = peripherals.pins.gpio16;
+        let pin_ws = peripherals.pins.gpio15;
+        let pin_mclk = peripherals.pins.gpio44;
+        std::thread::Builder::new()
+            .name("beep".into())
+            .stack_size(8192)
+            .spawn(move || {
+                let mut speaker = match speaker::Speaker::new(
+                    i2s0,
+                    pin_bclk,
+                    pin_dout,
+                    pin_ws,
+                    Some(pin_mclk),
+                ) {
+                    Ok(s) => {
+                        speaker_ready.store(true, Ordering::Relaxed);
+                        info!(
+                            "Speaker I2S initialized (BCLK={} DOUT={} WS={} MCLK={})",
+                            PIN_I2S_BCLK, PIN_I2S_DOUT, PIN_I2S_WS, PIN_I2S_MCLK
+                        );
+                        Some(s)
+                    }
+                    Err(e) => {
+                        log::warn!("Speaker I2S init failed: {}", e);
+                        None
+                    }
+                };
+
+                loop {
+                    if let Some(code) = debug_flags::take_beep_tone_request() {
+                        if let Some(tone) = speaker::AlertTone::from_request(code) {
+                            if let Some(spk) = speaker.as_mut() {
+                                match spk.play(tone, crate::debug_flags::take_beep_stop_request) {
+                                    Ok(()) => info!("beep: {}", tone.as_str()),
+                                    Err(e) => log::warn!("speaker beep failed: {}", e),
+                                }
+                            } else {
+                                log::warn!("speaker: not initialized");
+                            }
+                        }
+                    } else {
+                        // Keep latency low for console-triggered tones while avoiding busy wait.
+                        std::thread::sleep(Duration::from_millis(20));
+                    }
+                }
+            })
+            .expect("failed to spawn beep thread");
+    }
 
     // ── 9. WiFi ──
     let mut ip_address = String::new();
@@ -961,6 +995,7 @@ fn main() -> Result<()> {
     let mut alerts_snapshot_seen = false;
     let mut last_alert_fingerprint = String::new();
     let mut last_alert_beep_ms: Option<u32> = None;
+    let mut warned_beep_unavailable = false;
 
     // Initial draw
     views::draw_current_view(&mut fb, &state);
@@ -1043,18 +1078,14 @@ fn main() -> Result<()> {
                         .unwrap_or(true);
                     if can_beep {
                         let tone = alert_tone_for(&alerts);
-                        if let Some(spk) = speaker.as_mut() {
-                            match spk.play(tone, crate::debug_flags::take_beep_stop_request) {
-                                Ok(()) => {
-                                    info!(
-                                        "alerts beep: {} ({} active)",
-                                        tone.as_str(),
-                                        alerts.len()
-                                    );
-                                    last_alert_beep_ms = Some(now);
-                                }
-                                Err(e) => log::warn!("alerts beep failed: {}", e),
-                            }
+                        if speaker_ready.load(Ordering::Relaxed) {
+                            crate::debug_flags::request_beep_tone(tone.request_code());
+                            info!("alerts beep queued: {} ({} active)", tone.as_str(), alerts.len());
+                            last_alert_beep_ms = Some(now);
+                            warned_beep_unavailable = false;
+                        } else if !warned_beep_unavailable {
+                            log::warn!("alerts beep requested but speaker is not available");
+                            warned_beep_unavailable = true;
                         }
                     } else {
                         info!("alerts changed but beep is in cooldown");
@@ -1085,20 +1116,6 @@ fn main() -> Result<()> {
                 }
             } else {
                 info!("IMU: not initialized");
-            }
-        }
-
-        // Speaker tone test requested from console
-        if let Some(code) = debug_flags::take_beep_tone_request() {
-            if let Some(tone) = speaker::AlertTone::from_request(code) {
-                if let Some(spk) = speaker.as_mut() {
-                    match spk.play(tone, crate::debug_flags::take_beep_stop_request) {
-                        Ok(()) => info!("beep: {}", tone.as_str()),
-                        Err(e) => log::warn!("speaker beep failed: {}", e),
-                    }
-                } else {
-                    log::warn!("speaker: not initialized");
-                }
             }
         }
 
