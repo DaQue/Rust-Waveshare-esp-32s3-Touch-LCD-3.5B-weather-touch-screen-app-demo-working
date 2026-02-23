@@ -5,7 +5,7 @@ use embedded_graphics::{
     primitives::{Line, PrimitiveStyle, PrimitiveStyleBuilder, Rectangle},
     text::{Alignment, Text},
 };
-use profont::{PROFONT_10_POINT, PROFONT_14_POINT, PROFONT_24_POINT};
+use profont::{PROFONT_14_POINT, PROFONT_24_POINT};
 
 use crate::framebuffer::Framebuffer;
 use crate::layout::*;
@@ -31,7 +31,7 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
     // Current readings
     let reading_y = 52;
     let primary_style = MonoTextStyle::new(&PROFONT_24_POINT, TEXT_PRIMARY);
-    let label_style = MonoTextStyle::new(&PROFONT_10_POINT, TEXT_TERTIARY);
+    let label_style = MonoTextStyle::new(&PROFONT_14_POINT, TEXT_TERTIARY);
 
     if let Some(temp) = state.indoor_temp {
         let t = if state.use_celsius {
@@ -44,7 +44,7 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
         Text::new(&t, Point::new(x, y), primary_style)
             .draw(fb)
             .ok();
-        Text::new("TEMP", Point::new(x, y + 16), label_style)
+        Text::new("TEMP", Point::new(x, y + 20), label_style)
             .draw(fb)
             .ok();
     }
@@ -59,7 +59,7 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
         Text::new(&t, Point::new(x, y), primary_style)
             .draw(fb)
             .ok();
-        Text::new("HUMIDITY", Point::new(x, y + 16), label_style)
+        Text::new("HUMIDITY", Point::new(x, y + 20), label_style)
             .draw(fb)
             .ok();
     }
@@ -74,7 +74,7 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
         Text::new(&t, Point::new(x, y), primary_style)
             .draw(fb)
             .ok();
-        Text::new("hPa", Point::new(x, y + 16), label_style)
+        Text::new("hPa", Point::new(x, y + 20), label_style)
             .draw(fb)
             .ok();
     }
@@ -137,15 +137,36 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
     }
 
     // Y-axis labels (auto-scale based on data)
-    let axis_style = MonoTextStyle::new(&PROFONT_10_POINT, TEXT_TERTIARY);
+    let axis_style = MonoTextStyle::new(&PROFONT_14_POINT, TEXT_TERTIARY);
     if !temp_data.is_empty() {
         let (min_v, max_v) = data_range(&temp_data);
         let top_label = format!("{:.0}", max_v);
         let bot_label = format!("{:.0}", min_v);
-        Text::with_alignment(&top_label, Point::new(graph_x - 4, graph_y + 8), axis_style, Alignment::Right)
+        Text::with_alignment(&top_label, Point::new(graph_x - 4, graph_y + 10), axis_style, Alignment::Right)
             .draw(fb).ok();
-        Text::with_alignment(&bot_label, Point::new(graph_x - 4, graph_y + graph_h - 2), axis_style, Alignment::Right)
+        Text::with_alignment(&bot_label, Point::new(graph_x - 4, graph_y + graph_h - 4), axis_style, Alignment::Right)
             .draw(fb).ok();
+    }
+    if !hum_data.is_empty() {
+        let (min_v, max_v) = data_range(&hum_data);
+        let top_label = format!("{:.0}%", max_v);
+        let bot_label = format!("{:.0}%", min_v);
+        Text::with_alignment(
+            &top_label,
+            Point::new(graph_x + graph_w - 4, graph_y + 10),
+            axis_style,
+            Alignment::Right,
+        )
+        .draw(fb)
+        .ok();
+        Text::with_alignment(
+            &bot_label,
+            Point::new(graph_x + graph_w - 4, graph_y + graph_h - 4),
+            axis_style,
+            Alignment::Right,
+        )
+        .draw(fb)
+        .ok();
     }
 
     // X-axis label
@@ -158,7 +179,7 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
     };
     Text::with_alignment(
         &time_label,
-        Point::new(graph_x + graph_w / 2, graph_y + graph_h + 14),
+        Point::new(graph_x + graph_w / 2, graph_y + graph_h + 18),
         axis_style,
         Alignment::Center,
     )
@@ -166,16 +187,16 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
     .ok();
 
     // Legend
-    let legend_y = graph_y + graph_h + 14;
-    let legend_style = MonoTextStyle::new(&PROFONT_10_POINT, GRAPH_TEMP_COLOR);
+    let legend_y = graph_y + graph_h + 36;
+    let legend_style = MonoTextStyle::new(&PROFONT_14_POINT, GRAPH_TEMP_COLOR);
     Text::new("-- Temp", Point::new(graph_x, legend_y), legend_style)
         .draw(fb).ok();
-    let legend_style2 = MonoTextStyle::new(&PROFONT_10_POINT, GRAPH_HUM_COLOR);
-    Text::new("-- Humidity", Point::new(graph_x + 90, legend_y), legend_style2)
+    let legend_style2 = MonoTextStyle::new(&PROFONT_14_POINT, GRAPH_HUM_COLOR);
+    Text::new("-- Humidity", Point::new(graph_x + 138, legend_y), legend_style2)
         .draw(fb).ok();
 
     // Bottom hint
-    let hint_style = MonoTextStyle::new(&PROFONT_10_POINT, TEXT_BOTTOM);
+    let hint_style = MonoTextStyle::new(&PROFONT_14_POINT, TEXT_BOTTOM);
     Text::with_alignment(
         "(swipe <-/-> or tap header to switch pages)",
         Point::new(screen_w / 2, screen_h - 4),
@@ -186,10 +207,33 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
     .ok();
 }
 
-/// Get min/max of data with padding.
+/// Get min/max of data with padding, ignoring outliers via IQR filtering.
 fn data_range(data: &[f32]) -> (f32, f32) {
-    let min = data.iter().cloned().fold(f32::INFINITY, f32::min);
-    let max = data.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+    let clean: Vec<f32> = data.iter().copied().filter(|v| v.is_finite()).collect();
+    if clean.is_empty() {
+        return (0.0, 1.0);
+    }
+    let mut sorted = clean;
+    sorted.sort_unstable_by(|a, b| a.total_cmp(b));
+    let n = sorted.len();
+    let q1 = sorted[n / 4];
+    let q3 = sorted[(3 * n) / 4];
+    let iqr = (q3 - q1).max(1.0);
+    let lo = q1 - 1.5 * iqr;
+    let hi = q3 + 1.5 * iqr;
+    let mut min = f32::INFINITY;
+    let mut max = f32::NEG_INFINITY;
+    for &v in &sorted {
+        if v >= lo && v <= hi {
+            if v < min { min = v; }
+            if v > max { max = v; }
+        }
+    }
+    if min > max {
+        // All values were outliers — use median
+        min = sorted[n / 2] - 1.0;
+        max = sorted[n / 2] + 1.0;
+    }
     let pad = ((max - min) * 0.1).max(1.0);
     (min - pad, max + pad)
 }
@@ -201,20 +245,21 @@ fn draw_line_graph(
     x: i32, y: i32, w: i32, h: i32,
     color: Rgb565,
 ) {
-    if data.len() < 2 {
+    let clean: Vec<f32> = data.iter().copied().filter(|v| v.is_finite()).collect();
+    if clean.len() < 2 {
         return;
     }
 
-    let (min_v, max_v) = data_range(data);
+    let (min_v, max_v) = data_range(&clean);
     let range = (max_v - min_v).max(0.01);
     let line_style = PrimitiveStyle::with_stroke(color, 2);
 
-    let n = data.len();
+    let n = clean.len();
     for i in 1..n {
         let x1 = x + ((i - 1) as i32 * w) / (n - 1) as i32;
         let x2 = x + (i as i32 * w) / (n - 1) as i32;
-        let y1 = y + h - ((data[i - 1] - min_v) / range * h as f32) as i32;
-        let y2 = y + h - ((data[i] - min_v) / range * h as f32) as i32;
+        let y1 = (y + h - ((clean[i - 1] - min_v) / range * h as f32) as i32).clamp(y, y + h);
+        let y2 = (y + h - ((clean[i] - min_v) / range * h as f32) as i32).clamp(y, y + h);
 
         Line::new(Point::new(x1, y1), Point::new(x2, y2))
             .into_styled(line_style)

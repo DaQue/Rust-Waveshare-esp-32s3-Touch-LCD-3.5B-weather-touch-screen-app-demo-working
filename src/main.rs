@@ -56,7 +56,16 @@ const WEATHER_STALE_AFTER_SECS: u64 = WEATHER_INTERVAL_SECS + 120;
 const ALERTS_INTERVAL_SECS: u64 = 180;
 const ALERTS_START_DELAY_SECS: u64 = 20;
 const ALERT_BEEP_COOLDOWN_SECS: u64 = 600;
+const WARNING_BEEP_INTERVAL_MS: u32 = 20_000;
+const WATCH_BEEP_INTERVAL_MS: u32 = 10_000;
 const BME280_INTERVAL_MS: u32 = 5_000;
+const BME_TEMP_MIN_F: f32 = -40.0;
+const BME_TEMP_MAX_F: f32 = 185.0;
+const BME_PRESSURE_MIN_HPA: f32 = 300.0;
+const BME_PRESSURE_MAX_HPA: f32 = 1200.0;
+const BME_TEMP_MAX_STEP_F: f32 = 8.0;
+const BME_HUM_MAX_STEP: f32 = 20.0;
+const BME_PRESSURE_MAX_STEP_HPA: f32 = 12.0;
 const TICK_MS: u64 = 100;
 const TIME_UPDATE_TICKS: u32 = 10; // every second
 const WIFI_DEBUG_TICKS: u32 = 100; // every 10 seconds
@@ -359,6 +368,42 @@ fn apply_orientation(
         *fb = framebuffer::Framebuffer::new(new_w, new_h);
     }
     state.dirty = true;
+}
+
+fn bme_reading_is_plausible(state: &views::AppState, reading: &bme280_sensor::Bme280Reading) -> bool {
+    if !reading.temperature_f.is_finite()
+        || !reading.humidity.is_finite()
+        || !reading.pressure_hpa.is_finite()
+    {
+        return false;
+    }
+    if !(BME_TEMP_MIN_F..=BME_TEMP_MAX_F).contains(&reading.temperature_f) {
+        return false;
+    }
+    if !(0.0..=100.0).contains(&reading.humidity) {
+        return false;
+    }
+    if !(BME_PRESSURE_MIN_HPA..=BME_PRESSURE_MAX_HPA).contains(&reading.pressure_hpa) {
+        return false;
+    }
+
+    // Block abrupt spikes from bad reads to keep now-view values and graph stable.
+    if let Some(prev) = state.indoor_temp {
+        if (reading.temperature_f - prev).abs() > BME_TEMP_MAX_STEP_F {
+            return false;
+        }
+    }
+    if let Some(prev) = state.indoor_humidity {
+        if (reading.humidity - prev).abs() > BME_HUM_MAX_STEP {
+            return false;
+        }
+    }
+    if let Some(prev) = state.indoor_pressure {
+        if (reading.pressure_hpa - prev).abs() > BME_PRESSURE_MAX_STEP_HPA {
+            return false;
+        }
+    }
+    true
 }
 
 // ── Display init (mirrors C factory bsp_display_init exactly) ──────
@@ -995,7 +1040,7 @@ fn main() -> Result<()> {
     let mut alerts_snapshot_seen = false;
     let mut last_alert_fingerprint = String::new();
     let mut last_alert_beep_ms: Option<u32> = None;
-    let mut warned_beep_unavailable = false;
+    let mut watch_beeps_remaining: u8 = 0;
 
     // Initial draw
     views::draw_current_view(&mut fb, &state);
@@ -1017,6 +1062,17 @@ fn main() -> Result<()> {
             last_bme_ms = t;
             if let Some(ref sensor) = bme280 {
                 if let Some(reading) = sensor.read(&mut i2c) {
+                    if !bme_reading_is_plausible(&state, &reading) {
+                        if debug_flags::is_on(&debug_flags::DEBUG_BME280) {
+                            log::warn!(
+                                "BME280 outlier dropped: {:.1}°F {:.1}%RH {:.0}hPa",
+                                reading.temperature_f,
+                                reading.humidity,
+                                reading.pressure_hpa
+                            );
+                        }
+                        continue;
+                    }
                     if debug_flags::is_on(&debug_flags::DEBUG_BME280) {
                         info!(
                             "BME280: {:.1}°F  {:.1}%RH  {:.0}hPa",
@@ -1071,34 +1127,132 @@ fn main() -> Result<()> {
                 let fp = alert_fingerprint(&alerts);
                 let changed = !alerts_snapshot_seen || fp != last_alert_fingerprint;
                 let beep_enabled = cfg.lock().unwrap().alerts_beep;
+
                 if changed && alerts_snapshot_seen && !alerts.is_empty() && beep_enabled {
-                    let now = now_ms();
-                    let can_beep = last_alert_beep_ms
-                        .map(|ts| now.wrapping_sub(ts) >= (ALERT_BEEP_COOLDOWN_SECS as u32 * 1000))
-                        .unwrap_or(true);
-                    if can_beep {
-                        let tone = alert_tone_for(&alerts);
-                        if speaker_ready.load(Ordering::Relaxed) {
-                            crate::debug_flags::request_beep_tone(tone.request_code());
-                            info!("alerts beep queued: {} ({} active)", tone.as_str(), alerts.len());
-                            last_alert_beep_ms = Some(now);
-                            warned_beep_unavailable = false;
-                        } else if !warned_beep_unavailable {
-                            log::warn!("alerts beep requested but speaker is not available");
-                            warned_beep_unavailable = true;
+                    let tone = alert_tone_for(&alerts);
+                    let highest_kind = alerts.first().map(|a| a.kind()).unwrap_or(weather::AlertKind::Other);
+
+                    match highest_kind {
+                        weather::AlertKind::Warning => {
+                            // Warning: takeover screen + repeating beep until silenced
+                            let already_silenced = fp == state.warning_silenced_fingerprint;
+                            if !already_silenced {
+                                state.warning_active = true;
+                                state.warning_scroll = 0;
+                                state.current_view = views::View::Warning;
+                                if speaker_ready.load(Ordering::Relaxed) {
+                                    crate::debug_flags::request_beep_tone(tone.request_code());
+                                    last_alert_beep_ms = Some(now_ms());
+                                    info!("WARNING takeover: {} ({} active)", tone.as_str(), alerts.len());
+                                }
+                            }
                         }
-                    } else {
-                        info!("alerts changed but beep is in cooldown");
+                        weather::AlertKind::Watch => {
+                            // Watch: play 3x over ~30s, no screen takeover
+                            watch_beeps_remaining = 3;
+                            if speaker_ready.load(Ordering::Relaxed) {
+                                crate::debug_flags::request_beep_tone(tone.request_code());
+                                watch_beeps_remaining -= 1;
+                                last_alert_beep_ms = Some(now_ms());
+                                info!("watch beep 1/3 queued ({} active)", alerts.len());
+                            }
+                        }
+                        _ => {
+                            // Advisory/Other: single beep with cooldown
+                            let now = now_ms();
+                            let can_beep = last_alert_beep_ms
+                                .map(|ts| now.wrapping_sub(ts) >= (ALERT_BEEP_COOLDOWN_SECS as u32 * 1000))
+                                .unwrap_or(true);
+                            if can_beep && speaker_ready.load(Ordering::Relaxed) {
+                                crate::debug_flags::request_beep_tone(tone.request_code());
+                                last_alert_beep_ms = Some(now);
+                                info!("advisory beep queued ({} active)", alerts.len());
+                            }
+                        }
                     }
                 }
+
                 state.weather_alerts = alerts;
                 if state.weather_alerts.is_empty() {
                     state.now_alerts_open = false;
+                    if state.warning_active {
+                        state.warning_active = false;
+                        if state.current_view == views::View::Warning {
+                            state.current_view = views::View::Now;
+                        }
+                        info!("warning cleared: no active alerts");
+                    }
                 }
                 last_alert_fingerprint = fp;
                 alerts_snapshot_seen = true;
                 state.dirty = true;
             }
+        }
+
+        // Repeating warning beep (every 20s while warning_active)
+        if state.warning_active {
+            if let Some(last) = last_alert_beep_ms {
+                if now_ms().wrapping_sub(last) >= WARNING_BEEP_INTERVAL_MS
+                    && speaker_ready.load(Ordering::Relaxed)
+                {
+                    let tone = alert_tone_for(&state.weather_alerts);
+                    crate::debug_flags::request_beep_tone(tone.request_code());
+                    last_alert_beep_ms = Some(now_ms());
+                }
+            }
+        }
+
+        // Watch beep repeat (every 10s, up to 3 total)
+        if watch_beeps_remaining > 0 {
+            if let Some(last) = last_alert_beep_ms {
+                if now_ms().wrapping_sub(last) >= WATCH_BEEP_INTERVAL_MS
+                    && speaker_ready.load(Ordering::Relaxed)
+                {
+                    let tone = alert_tone_for(&state.weather_alerts);
+                    crate::debug_flags::request_beep_tone(tone.request_code());
+                    watch_beeps_remaining -= 1;
+                    last_alert_beep_ms = Some(now_ms());
+                    info!("watch beep repeat ({} remaining)", watch_beeps_remaining);
+                }
+            }
+        }
+
+        // Console-requested warning silence
+        if debug_flags::REQUEST_SILENCE_WARNING.swap(false, Ordering::Relaxed)
+            && state.warning_active
+        {
+            state.warning_active = false;
+            state.warning_silenced_fingerprint = last_alert_fingerprint.clone();
+            crate::debug_flags::request_beep_stop();
+            info!("warning silenced via console");
+            state.dirty = true;
+        }
+
+        // Test warning injection from console
+        if debug_flags::REQUEST_TEST_WARNING.swap(false, Ordering::Relaxed) {
+            let fake = weather::WeatherAlert {
+                id: format!("test-{}", now_ms()),
+                event: "Tornado Warning".to_string(),
+                headline: "The National Weather Service has issued a Tornado Warning for your area.".to_string(),
+                description: "At 3:15 AM CDT, a severe thunderstorm capable of producing a tornado was located near Springfield, moving northeast at 45 mph.\n\nHAZARD: Tornado and quarter size hail.\n\nSOURCE: Radar indicated rotation.\n\nIMPACT: Flying debris will be dangerous to those caught without shelter. Mobile homes will be damaged or destroyed. Damage to roofs, windows, and vehicles will occur. Tree damage is likely.\n\nThis dangerous storm will be near Springfield by 3:30 AM CDT.".to_string(),
+                instruction: "TAKE SHELTER NOW! Move to a basement or an interior room on the lowest floor of a sturdy building. Avoid windows. If you are outdoors, in a mobile home, or in a vehicle, move to the closest substantial shelter and protect yourself from flying debris.".to_string(),
+                severity: "Extreme".to_string(),
+                certainty: "Observed".to_string(),
+                urgency: "Immediate".to_string(),
+                expires: "2026-02-22T05:00:00-06:00".to_string(),
+            };
+            info!("TEST WARNING injected");
+            state.weather_alerts = vec![fake];
+            state.warning_active = true;
+            state.warning_scroll = 0;
+            state.warning_silenced_fingerprint.clear();
+            state.current_view = views::View::Warning;
+            last_alert_fingerprint = "test-warning".to_string();
+            if speaker_ready.load(Ordering::Relaxed) {
+                crate::debug_flags::request_beep_tone(speaker::AlertTone::Warning.request_code());
+                last_alert_beep_ms = Some(now_ms());
+            }
+            state.dirty = true;
         }
 
         // IMU one-shot read requested from console

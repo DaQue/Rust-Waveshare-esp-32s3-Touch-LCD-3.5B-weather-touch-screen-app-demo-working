@@ -1552,7 +1552,7 @@ dependencies = [
 
 [[package]]
 name = "waveshare_s3_3p"
-version = "0.2.4"
+version = "0.2.5"
 dependencies = [
  "anyhow",
  "embedded-graphics",

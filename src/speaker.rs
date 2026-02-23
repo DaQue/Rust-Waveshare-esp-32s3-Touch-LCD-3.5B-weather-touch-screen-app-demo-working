@@ -317,26 +317,33 @@ impl<'d> Speaker<'d> {
                 }
             }
             AlertTone::Warning => {
-                // Rising triad: urgent and distinct.
-                if !self.write_square_tone(1250, 95, 12500, &mut should_stop)? {
-                    self.clear_output()?;
-                    return Ok(());
-                }
-                if !Self::pause_ms(35, &mut should_stop) {
-                    self.clear_output()?;
-                    return Ok(());
-                }
-                if !self.write_square_tone(1750, 105, 12500, &mut should_stop)? {
-                    self.clear_output()?;
-                    return Ok(());
-                }
-                if !Self::pause_ms(35, &mut should_stop) {
-                    self.clear_output()?;
-                    return Ok(());
-                }
-                if !self.write_square_tone(2450, 135, 12500, &mut should_stop)? {
-                    self.clear_output()?;
-                    return Ok(());
+                // 3x rising triad: impossible to sleep through.
+                for round in 0..3u8 {
+                    if !self.write_square_tone(1250, 95, 12500, &mut should_stop)? {
+                        self.clear_output()?;
+                        return Ok(());
+                    }
+                    if !Self::pause_ms(35, &mut should_stop) {
+                        self.clear_output()?;
+                        return Ok(());
+                    }
+                    if !self.write_square_tone(1750, 105, 12500, &mut should_stop)? {
+                        self.clear_output()?;
+                        return Ok(());
+                    }
+                    if !Self::pause_ms(35, &mut should_stop) {
+                        self.clear_output()?;
+                        return Ok(());
+                    }
+                    if !self.write_square_tone(2450, 135, 12500, &mut should_stop)? {
+                        self.clear_output()?;
+                        return Ok(());
+                    }
+                    // Gap between rounds (not after the last one)
+                    if round < 2 && !Self::pause_ms(250, &mut should_stop) {
+                        self.clear_output()?;
+                        return Ok(());
+                    }
                 }
             }
         }

@@ -4,6 +4,7 @@ pub mod forecast;
 pub mod i2c_scan;
 pub mod wifi_scan;
 pub mod about;
+pub mod warning;
 
 use std::collections::VecDeque;
 use crate::config::OrientationMode;
@@ -20,6 +21,7 @@ pub enum View {
     I2cScan,
     WifiScan,
     About,
+    Warning,
 }
 
 impl View {
@@ -31,6 +33,7 @@ impl View {
             View::I2cScan => View::WifiScan,
             View::WifiScan => View::About,
             View::About => View::Indoor,
+            View::Warning => View::Now,
         }
     }
 
@@ -42,6 +45,7 @@ impl View {
             View::I2cScan => View::Forecast,
             View::WifiScan => View::I2cScan,
             View::About => View::WifiScan,
+            View::Warning => View::Now,
         }
     }
 }
@@ -75,6 +79,9 @@ pub struct AppState {
     pub weather_stale: bool,
     pub save_celsius_pref: bool,
     pub force_weather_refresh: bool,
+    pub warning_active: bool,
+    pub warning_silenced_fingerprint: String,
+    pub warning_scroll: usize,
     pub orientation: Orientation,
     pub orientation_mode: OrientationMode,
     pub orientation_flip: bool,
@@ -108,6 +115,9 @@ impl AppState {
             weather_stale: false,
             save_celsius_pref: false,
             force_weather_refresh: false,
+            warning_active: false,
+            warning_silenced_fingerprint: String::new(),
+            warning_scroll: 0,
             orientation: Orientation::Landscape,
             orientation_mode: OrientationMode::Auto,
             orientation_flip: false,
@@ -125,6 +135,11 @@ impl AppState {
 
     /// Handle a touch gesture, returning true if the display needs a redraw.
     pub fn handle_gesture(&mut self, gesture: Gesture) -> bool {
+        // Warning view intercepts all gestures
+        if self.current_view == View::Warning {
+            return self.handle_warning_gesture(gesture);
+        }
+
         match gesture {
             Gesture::None => false,
             Gesture::SwipeLeft => {
@@ -144,6 +159,10 @@ impl AppState {
                     self.forecast_hourly_scroll = self.forecast_hourly_scroll.saturating_add(4);
                     self.dirty = true;
                     true
+                } else if self.current_view == View::Warning {
+                    self.warning_scroll = self.warning_scroll.saturating_add(3);
+                    self.dirty = true;
+                    true
                 } else {
                     false
                 }
@@ -151,6 +170,10 @@ impl AppState {
             Gesture::SwipeDown => {
                 if self.current_view == View::Forecast && self.forecast_hourly_open {
                     self.forecast_hourly_scroll = self.forecast_hourly_scroll.saturating_sub(4);
+                    self.dirty = true;
+                    true
+                } else if self.current_view == View::Warning {
+                    self.warning_scroll = self.warning_scroll.saturating_sub(3);
                     self.dirty = true;
                     true
                 } else {
@@ -161,6 +184,59 @@ impl AppState {
                 self.handle_tap(x, y)
             }
         }
+    }
+
+    fn handle_warning_gesture(&mut self, gesture: Gesture) -> bool {
+        let screen_h = self.screen_h() as i16;
+        let button_y = screen_h - screen_h / 3;
+
+        match gesture {
+            Gesture::Tap { y, .. } => {
+                if self.warning_active && y >= button_y {
+                    // Silence: stop beeping, record fingerprint, stay on page
+                    self.warning_active = false;
+                    self.warning_silenced_fingerprint = self.alert_fingerprint();
+                    crate::debug_flags::request_beep_stop();
+                    self.dirty = true;
+                    true
+                } else {
+                    false
+                }
+            }
+            Gesture::SwipeLeft | Gesture::SwipeRight => {
+                if !self.warning_active {
+                    // Already silenced — allow exit
+                    self.current_view = View::Now;
+                    self.warning_scroll = 0;
+                    self.dirty = true;
+                    true
+                } else {
+                    false // Block navigation while alarm is active
+                }
+            }
+            Gesture::SwipeUp => {
+                self.warning_scroll = self.warning_scroll.saturating_add(3);
+                self.dirty = true;
+                true
+            }
+            Gesture::SwipeDown => {
+                self.warning_scroll = self.warning_scroll.saturating_sub(3);
+                self.dirty = true;
+                true
+            }
+            Gesture::None => false,
+        }
+    }
+
+    /// Compute a fingerprint of the current alert set for silence tracking.
+    fn alert_fingerprint(&self) -> String {
+        let mut parts: Vec<String> = self
+            .weather_alerts
+            .iter()
+            .map(|a| format!("{}|{}|{}", a.id, a.event, a.severity))
+            .collect();
+        parts.sort_unstable();
+        parts.join("||")
     }
 
     fn handle_tap(&mut self, x: i16, y: i16) -> bool {
@@ -262,5 +338,6 @@ pub fn draw_current_view(fb: &mut Framebuffer, state: &AppState) {
         View::I2cScan => i2c_scan::draw(fb, state),
         View::WifiScan => wifi_scan::draw(fb, state),
         View::About => about::draw(fb, state),
+        View::Warning => warning::draw(fb, state),
     }
 }

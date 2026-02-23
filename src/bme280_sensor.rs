@@ -135,8 +135,8 @@ impl Bme280 {
         }
     }
 
-    /// Read temperature, humidity, and pressure.
-    pub fn read(&self, i2c: &mut I2cDriver<'_>) -> Option<Bme280Reading> {
+    /// Single raw read — returns compensated values.
+    fn read_once(&self, i2c: &mut I2cDriver<'_>) -> Option<Bme280Reading> {
         let mut raw = [0u8; 8];
         if i2c.write_read(self.addr, &[REG_PRESS_MSB], &mut raw, 100).is_err() {
             return None;
@@ -163,6 +163,47 @@ impl Bme280 {
             temperature_f: temp_f,
             humidity,
             pressure_hpa,
+        })
+    }
+
+    /// Read with trimmed mean: 5 samples, drop highest and lowest, average middle 3.
+    pub fn read(&self, i2c: &mut I2cDriver<'_>) -> Option<Bme280Reading> {
+        let mut temps = [0.0f32; 5];
+        let mut hums = [0.0f32; 5];
+        let mut press = [0.0f32; 5];
+        let mut count = 0u8;
+
+        for _ in 0..5 {
+            if let Some(r) = self.read_once(i2c) {
+                temps[count as usize] = r.temperature_f;
+                hums[count as usize] = r.humidity;
+                press[count as usize] = r.pressure_hpa;
+                count += 1;
+            }
+        }
+
+        if count < 3 {
+            // Not enough good reads — fall back to single
+            return self.read_once(i2c);
+        }
+
+        let n = count as usize;
+        temps[..n].sort_unstable_by(|a, b| a.total_cmp(b));
+        hums[..n].sort_unstable_by(|a, b| a.total_cmp(b));
+        press[..n].sort_unstable_by(|a, b| a.total_cmp(b));
+
+        // Drop first and last, average the rest
+        let mid = &temps[1..n - 1];
+        let avg_t = mid.iter().sum::<f32>() / mid.len() as f32;
+        let mid = &hums[1..n - 1];
+        let avg_h = mid.iter().sum::<f32>() / mid.len() as f32;
+        let mid = &press[1..n - 1];
+        let avg_p = mid.iter().sum::<f32>() / mid.len() as f32;
+
+        Some(Bme280Reading {
+            temperature_f: avg_t,
+            humidity: avg_h,
+            pressure_hpa: avg_p,
         })
     }
 

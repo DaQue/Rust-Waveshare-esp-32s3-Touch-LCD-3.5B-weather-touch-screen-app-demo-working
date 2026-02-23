@@ -103,7 +103,7 @@ Troubleshooting
 
 Recent Orientation Updates (2026-02-21)
 ---------------------------------------
-- Firmware/package version is now `0.2.4`.
+- Firmware/package version is now `0.2.5`.
 - Runtime screen orientation now supports all 4 physical directions:
   - `Landscape` (USB right)
   - `LandscapeFlipped` (USB left)
@@ -156,7 +156,7 @@ NWS Alerts (Current)
 Console Commands for Alerts / Metadata
 --------------------------------------
 - `units show|f|c`
-- `version` (prints firmware version, e.g. `v0.2.4`)
+- `version` (prints firmware version, e.g. `v0.2.5`)
 - `about` (firmware/device summary plus `help` hint)
 - `beep advisory|watch|warning|stop` (speaker tone test / stop)
 - `alerts show`
@@ -167,6 +167,7 @@ Console Commands for Alerts / Metadata
 - `alerts ua <user-agent>`
 - `alerts scope <scope>` (example: `area=MO`, `zone=MOZ061`)
 - `alerts zone show|clear`
+- `alerts test warning`
 - `flash show`
 - `flash set-time <text>`
 
@@ -202,3 +203,13 @@ Problems Encountered and Fixes
   - Root cause: long uninterrupted pixel loops could starve lower-priority task scheduling.
   - Fix:
     - Added cooperative yields during large framebuffer draw/fill loops.
+- Indoor BME280 readings occasionally included spikes/noisy values that made graphs hard to trust.
+  - Fixes:
+    - Switched to a trimmed-mean BME280 read path (5 samples, drop high/low, average middle).
+    - Added plausibility/outlier rejection before values are accepted into state/history.
+    - Hardened indoor graph scaling/drawing against non-finite values.
+- Indoor graph text was too small and labels were colliding.
+  - Fixes:
+    - Increased small graph font sizes.
+    - Added humidity range labels on the right axis.
+    - Adjusted legend/time-label spacing and alignment.

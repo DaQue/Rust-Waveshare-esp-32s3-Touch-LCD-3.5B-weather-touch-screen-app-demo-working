@@ -41,6 +41,17 @@ pub const CARD_BORDER_I2C: Rgb565 = rgb(63, 75, 95);
 pub const CARD_FILL_WIFI: Rgb565 = rgb(20, 29, 40);
 pub const CARD_BORDER_WIFI: Rgb565 = rgb(66, 86, 108);
 
+// ── Warning view colors ─────────────────────────────────────────────
+
+pub const BG_WARNING: Rgb565 = rgb(48, 8, 8);
+pub const CARD_FILL_SILENCE: Rgb565 = rgb(180, 40, 40);
+pub const CARD_BORDER_SILENCE: Rgb565 = rgb(255, 80, 80);
+pub const CARD_FILL_SILENCED: Rgb565 = rgb(40, 60, 40);
+pub const CARD_BORDER_SILENCED: Rgb565 = rgb(80, 140, 80);
+pub const TEXT_WARNING_TITLE: Rgb565 = rgb(255, 100, 100);
+pub const TEXT_WARNING_BODY: Rgb565 = rgb(240, 230, 220);
+pub const TEXT_SILENCE_BUTTON: Rgb565 = rgb(255, 255, 255);
+
 // ── Text colors ─────────────────────────────────────────────────────
 
 pub const TEXT_HEADER: Rgb565 = rgb(222, 225, 230);

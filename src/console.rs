@@ -171,6 +171,7 @@ fn print_help() {
     info!("  alerts ua <user-agent>     - set NWS User-Agent");
     info!("  alerts scope <scope>       - set NWS scope (example: area=MO)");
     info!("  alerts zone show|clear     - show/clear cached zone");
+    info!("  alerts test warning        - inject fake warning for testing");
     info!("  [Hardware / Diagnostics]");
     info!("  imu read                   - one-shot IMU reading");
     info!("  i2c scan                   - rescan I2C bus");
@@ -191,7 +192,8 @@ fn handle_beep(sub: &str) {
         "warning" => crate::debug_flags::request_beep_tone(2),
         "stop" => {
             crate::debug_flags::request_beep_stop();
-            info!("beep stop requested");
+            crate::debug_flags::REQUEST_SILENCE_WARNING.store(true, std::sync::atomic::Ordering::Relaxed);
+            info!("beep stop + warning silence requested");
             return;
         }
         "" | "show" => {
@@ -689,7 +691,17 @@ fn handle_alerts(
                 _ => info!("usage: alerts zone show|clear"),
             }
         }
-        _ => info!("usage: alerts show|on|off|beep on|off|show|auto-scope on|off|ua <user-agent>|scope <scope>|zone show|clear"),
+        "test" => {
+            let kind = rest.trim().to_ascii_lowercase();
+            match kind.as_str() {
+                "warning" | "" => {
+                    crate::debug_flags::REQUEST_TEST_WARNING.store(true, std::sync::atomic::Ordering::Relaxed);
+                    info!("test warning alert injected (will trigger on next tick)");
+                }
+                _ => info!("usage: alerts test warning"),
+            }
+        }
+        _ => info!("usage: alerts show|on|off|beep|auto-scope|ua|scope|zone|test warning"),
     }
     Ok(())
 }
