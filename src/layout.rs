@@ -20,6 +20,8 @@ pub const BG_I2C: Rgb565 = rgb(27, 31, 39);
 pub const BG_WIFI: Rgb565 = rgb(24, 30, 39);
 /// About view background
 pub const BG_ABOUT: Rgb565 = rgb(22, 28, 38);
+/// HVAC view background
+pub const BG_HVAC: Rgb565 = rgb(22, 28, 38);
 
 // ── Line / separator colors ─────────────────────────────────────────
 

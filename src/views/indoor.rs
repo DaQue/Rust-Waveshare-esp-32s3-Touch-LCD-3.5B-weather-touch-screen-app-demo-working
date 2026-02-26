@@ -33,6 +33,17 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
     let primary_style = MonoTextStyle::new(&PROFONT_24_POINT, TEXT_PRIMARY);
     let label_style = MonoTextStyle::new(&PROFONT_14_POINT, TEXT_TERTIARY);
 
+    if state.indoor_temp.is_none() && state.indoor_humidity.is_none() {
+        let warn_color = crate::layout::rgb(255, 80, 80);
+        let warn_style = MonoTextStyle::new(&PROFONT_14_POINT, warn_color);
+        Text::new("BME280 sensor unavailable", Point::new(14, reading_y), warn_style)
+            .draw(fb)
+            .ok();
+        Text::new("(check I2C wiring)", Point::new(14, reading_y + 18), label_style)
+            .draw(fb)
+            .ok();
+    }
+
     if let Some(temp) = state.indoor_temp {
         let t = if state.use_celsius {
             format!("{:.1}°C", (temp - 32.0) * 5.0 / 9.0)

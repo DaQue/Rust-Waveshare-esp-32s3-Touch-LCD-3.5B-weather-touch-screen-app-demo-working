@@ -669,6 +669,8 @@ fn main() -> Result<()> {
     let bme280 = bme280_sensor::Bme280::init(&mut i2c);
     if bme280.is_some() {
         info!("BME280 sensor ready");
+    } else {
+        log::warn!("BME280 init failed — sensor unavailable");
     }
 
     // ── 8. IMU (QMI8658) ──
@@ -1036,6 +1038,7 @@ fn main() -> Result<()> {
     // ── 13. Main event loop ──
     info!("Entering main loop");
     let mut last_bme_ms: u32 = 0;
+    let mut bme_reject_streak: u16 = 0;
     let mut last_hvac_detect_ms: u32 = 0;
     let mut last_hvac_record_ms: u32 = 0;
     let mut last_pressure_sample_ms: u32 = 0;
@@ -1069,37 +1072,56 @@ fn main() -> Result<()> {
         if t.wrapping_sub(last_bme_ms) >= BME280_INTERVAL_MS {
             last_bme_ms = t;
             if let Some(ref sensor) = bme280 {
-                if let Some(reading) = sensor.read(&mut i2c) {
-                    if !bme_reading_is_plausible(&state, &reading) {
+                match sensor.read(&mut i2c) {
+                  Some(reading) => {
+                    let plausible = bme_reading_is_plausible(&state, &reading);
+                    if !plausible {
+                        bme_reject_streak = bme_reject_streak.saturating_add(1);
+                    }
+                    // Accept if plausible, or force-accept after 12 rejects (~60s) to recover.
+                    if !plausible && bme_reject_streak < 12 {
                         if debug_flags::is_on(&debug_flags::DEBUG_BME280) {
                             log::warn!(
-                                "BME280 outlier dropped: {:.1}°F {:.1}%RH {:.0}hPa",
+                                "BME280 outlier dropped ({}): {:.1}°F {:.1}%RH {:.0}hPa",
+                                bme_reject_streak,
                                 reading.temperature_f,
                                 reading.humidity,
                                 reading.pressure_hpa
                             );
                         }
-                        continue;
-                    }
-                    if debug_flags::is_on(&debug_flags::DEBUG_BME280) {
-                        info!(
-                            "BME280: {:.1}°F  {:.1}%RH  {:.0}hPa",
-                            reading.temperature_f, reading.humidity, reading.pressure_hpa
-                        );
-                    }
-                    state.indoor_temp = Some(reading.temperature_f);
-                    state.indoor_humidity = Some(reading.humidity);
-                    state.indoor_pressure = Some(reading.pressure_hpa);
-                    // Push to history ring buffer (VecDeque: O(1) pop_front)
-                    if state.indoor_temp_history.len() >= views::INDOOR_HISTORY_MAX {
-                        state.indoor_temp_history.pop_front();
-                    }
-                    state.indoor_temp_history.push_back(reading.temperature_f);
-                    if state.indoor_hum_history.len() >= views::INDOOR_HISTORY_MAX {
-                        state.indoor_hum_history.pop_front();
-                    }
-                    state.indoor_hum_history.push_back(reading.humidity);
-                    state.dirty = true;
+                        // Skip this reading but do NOT continue — let rendering proceed.
+                    } else {
+                        if !plausible && debug_flags::is_on(&debug_flags::DEBUG_BME280) {
+                            log::warn!(
+                                "BME280 re-baselining: {:.1}°F {:.1}%RH {:.0}hPa",
+                                reading.temperature_f, reading.humidity, reading.pressure_hpa
+                            );
+                        }
+                        bme_reject_streak = 0;
+                        if debug_flags::is_on(&debug_flags::DEBUG_BME280) {
+                            info!(
+                                "BME280: {:.1}°F  {:.1}%RH  {:.0}hPa",
+                                reading.temperature_f, reading.humidity, reading.pressure_hpa
+                            );
+                        }
+                        state.indoor_temp = Some(reading.temperature_f);
+                        state.indoor_humidity = Some(reading.humidity);
+                        state.indoor_pressure = Some(reading.pressure_hpa);
+                        // Push to history ring buffer (VecDeque: O(1) pop_front)
+                        if state.indoor_temp_history.len() >= views::INDOOR_HISTORY_MAX {
+                            state.indoor_temp_history.pop_front();
+                        }
+                        state.indoor_temp_history.push_back(reading.temperature_f);
+                        if state.indoor_hum_history.len() >= views::INDOOR_HISTORY_MAX {
+                            state.indoor_hum_history.pop_front();
+                        }
+                        state.indoor_hum_history.push_back(reading.humidity);
+                        state.dirty = true;
+                    } // end accept block
+                  }
+                  None => {
+                    log::warn!("BME280 read returned None (I2C failed)");
+                  }
                 }
             }
         }
