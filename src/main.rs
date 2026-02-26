@@ -4,7 +4,9 @@ mod console;
 mod debug_flags;
 mod framebuffer;
 mod http_client;
+mod hvac;
 mod layout;
+mod pressure_history;
 mod qmi8658;
 mod speaker;
 mod touch;
@@ -59,6 +61,9 @@ const ALERT_BEEP_COOLDOWN_SECS: u64 = 600;
 const WARNING_BEEP_INTERVAL_MS: u32 = 20_000;
 const WATCH_BEEP_INTERVAL_MS: u32 = 10_000;
 const BME280_INTERVAL_MS: u32 = 5_000;
+const HVAC_DETECT_INTERVAL_MS: u32 = 5_000;
+const HVAC_RECORD_INTERVAL_MS: u32 = 30_000;
+const PRESSURE_SAMPLE_INTERVAL_MS: u32 = pressure_history::SAMPLE_PERIOD_SECS * 1000;
 const BME_TEMP_MIN_F: f32 = -40.0;
 const BME_TEMP_MAX_F: f32 = 185.0;
 const BME_PRESSURE_MIN_HPA: f32 = 300.0;
@@ -263,7 +268,7 @@ fn esp_check(res: esp_idf_sys::esp_err_t, msg: &str) -> Result<()> {
     }
 }
 
-fn now_ms() -> u32 {
+pub fn now_ms() -> u32 {
     unsafe { (esp_idf_sys::esp_timer_get_time() / 1000) as u32 }
 }
 
@@ -1031,6 +1036,9 @@ fn main() -> Result<()> {
     // ── 13. Main event loop ──
     info!("Entering main loop");
     let mut last_bme_ms: u32 = 0;
+    let mut last_hvac_detect_ms: u32 = 0;
+    let mut last_hvac_record_ms: u32 = 0;
+    let mut last_pressure_sample_ms: u32 = 0;
     let mut tick_count: u32 = 0;
     let mut orientation_candidate = state.orientation;
     let mut orientation_candidate_count: u8 = 0;
@@ -1094,6 +1102,40 @@ fn main() -> Result<()> {
                     state.dirty = true;
                 }
             }
+        }
+
+        // HVAC fast detection (every 5s)
+        if t.wrapping_sub(last_hvac_detect_ms) >= HVAC_DETECT_INTERVAL_MS {
+            if let Some(temp_f) = state.indoor_temp {
+                let temp_c = (temp_f - 32.0) * 5.0 / 9.0;
+                state.hvac.detect(temp_c, t);
+                last_hvac_detect_ms = t;
+                state.dirty = true;
+            }
+        }
+
+        // HVAC history record (every 30s)
+        if t.wrapping_sub(last_hvac_record_ms) >= HVAC_RECORD_INTERVAL_MS {
+            state.hvac.record();
+            last_hvac_record_ms = t;
+        }
+
+        // Pressure history sample (every 5 minutes)
+        if t.wrapping_sub(last_pressure_sample_ms) >= PRESSURE_SAMPLE_INTERVAL_MS {
+            let bme = state.indoor_pressure;
+            let owm = state
+                .current_weather
+                .as_ref()
+                .and_then(|cw| {
+                    if cw.pressure_hpa > 0 {
+                        Some(cw.pressure_hpa as f32)
+                    } else {
+                        None
+                    }
+                });
+            state.pressure_history.push(bme, owm);
+            last_pressure_sample_ms = t;
+            state.dirty = true;
         }
 
         // Check for weather data from background thread

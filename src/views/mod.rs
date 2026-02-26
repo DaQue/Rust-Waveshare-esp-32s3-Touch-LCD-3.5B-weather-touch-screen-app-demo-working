@@ -1,5 +1,7 @@
 pub mod now;
 pub mod indoor;
+pub mod hvac;
+pub mod pressure_hvac;
 pub mod forecast;
 pub mod i2c_scan;
 pub mod wifi_scan;
@@ -16,6 +18,8 @@ use crate::touch::Gesture;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum View {
     Indoor,
+    Hvac,
+    PressureHvac,
     Now,
     Forecast,
     I2cScan,
@@ -27,7 +31,9 @@ pub enum View {
 impl View {
     pub fn next(self) -> View {
         match self {
-            View::Indoor => View::Now,
+            View::Indoor => View::Hvac,
+            View::Hvac => View::PressureHvac,
+            View::PressureHvac => View::Now,
             View::Now => View::Forecast,
             View::Forecast => View::I2cScan,
             View::I2cScan => View::WifiScan,
@@ -40,7 +46,9 @@ impl View {
     pub fn prev(self) -> View {
         match self {
             View::Indoor => View::About,
-            View::Now => View::Indoor,
+            View::Hvac => View::Indoor,
+            View::PressureHvac => View::Hvac,
+            View::Now => View::PressureHvac,
             View::Forecast => View::Now,
             View::I2cScan => View::Forecast,
             View::WifiScan => View::I2cScan,
@@ -82,6 +90,8 @@ pub struct AppState {
     pub warning_active: bool,
     pub warning_silenced_fingerprint: String,
     pub warning_scroll: usize,
+    pub hvac: crate::hvac::HvacDetector,
+    pub pressure_history: crate::pressure_history::PressureHistory,
     pub orientation: Orientation,
     pub orientation_mode: OrientationMode,
     pub orientation_flip: bool,
@@ -118,6 +128,8 @@ impl AppState {
             warning_active: false,
             warning_silenced_fingerprint: String::new(),
             warning_scroll: 0,
+            hvac: crate::hvac::HvacDetector::new(5.0, 30.0),
+            pressure_history: crate::pressure_history::PressureHistory::new(),
             orientation: Orientation::Landscape,
             orientation_mode: OrientationMode::Auto,
             orientation_flip: false,
@@ -334,6 +346,8 @@ pub fn draw_current_view(fb: &mut Framebuffer, state: &AppState) {
     match state.current_view {
         View::Now => now::draw(fb, state),
         View::Indoor => indoor::draw(fb, state),
+        View::Hvac => hvac::draw(fb, state),
+        View::PressureHvac => pressure_hvac::draw(fb, state),
         View::Forecast => forecast::draw(fb, state),
         View::I2cScan => i2c_scan::draw(fb, state),
         View::WifiScan => wifi_scan::draw(fb, state),
