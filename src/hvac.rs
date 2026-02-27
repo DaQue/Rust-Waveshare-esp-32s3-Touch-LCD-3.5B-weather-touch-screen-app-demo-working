@@ -3,13 +3,13 @@ use core::fmt;
 // ── Fast detection constants (5s sample rate) ───────────────────────
 const FAST_WINDOW: usize = 3;          // slope over 3 intervals = 15s of data
 const FAST_BUF_SIZE: usize = FAST_WINDOW + 1; // need N+1 samples
-const FAST_CONFIRM: u8 = 1;            // min candidate_count to commit (1 = commit on first observation)
+const FAST_CONFIRM: u8 = 3;            // min candidate_count to commit (3 = require 15s sustained slope)
 
 // ── Slope thresholds (C/min) ────────────────────────────────────────
-const HEAT_ON_SLOPE: f32 = 0.03;
-const COOL_ON_SLOPE: f32 = -0.03;
-const HEAT_OFF_SLOPE: f32 = 0.01;
-const COOL_OFF_SLOPE: f32 = -0.01;
+const HEAT_ON_SLOPE: f32 = 0.10;
+const COOL_ON_SLOPE: f32 = -0.08;
+const HEAT_OFF_SLOPE: f32 = 0.02;
+const COOL_OFF_SLOPE: f32 = -0.02;
 
 // ── History constants (30s record rate) ────────────────────────────
 const SHORT_CYCLE_MINS: u32 = 4;
