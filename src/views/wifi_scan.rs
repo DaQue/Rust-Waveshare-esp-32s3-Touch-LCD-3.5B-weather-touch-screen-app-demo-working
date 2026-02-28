@@ -43,7 +43,8 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
 
     if state.wifi_networks.is_empty() {
         let placeholder_style = MonoTextStyle::new(&PROFONT_12_POINT, TEXT_DETAIL);
-        Text::new("No networks found", Point::new(24, 80), placeholder_style)
+        let msg = if state.wifi_scan_pending { "Scanning..." } else { "No networks found" };
+        Text::new(msg, Point::new(24, 80), placeholder_style)
             .draw(fb)
             .ok();
     } else {

@@ -76,6 +76,7 @@ pub struct AppState {
     pub bottom_text: String,
     pub i2c_devices: Vec<u8>,
     pub wifi_networks: Vec<(String, i8)>, // (ssid, rssi)
+    pub wifi_scan_pending: bool,
     pub wifi_ssid: String,
     pub ip_address: String,
     pub forecast_hourly_open: bool,
@@ -114,6 +115,7 @@ impl AppState {
             bottom_text: String::new(),
             i2c_devices: Vec::new(),
             wifi_networks: Vec::new(),
+            wifi_scan_pending: false,
             wifi_ssid: String::new(),
             ip_address: String::new(),
             forecast_hourly_open: false,

@@ -6,15 +6,15 @@ use esp_idf_svc::wifi::{
 };
 use log::info;
 
-/// WiFi connection result including optional scan results.
+/// WiFi connection result.
 pub struct WifiResult {
     pub wifi: Box<EspWifi<'static>>,
-    pub networks: Vec<(String, i8)>,
     pub connected: bool,
     pub ip_address: Option<String>,
 }
 
-pub type ReconnectOutcome = Option<(String, Vec<(String, i8)>)>;
+/// Returns the connected IP address, or None if reconnect failed.
+pub type ReconnectOutcome = Option<String>;
 
 /// Log WiFi/AP state from ESP-IDF internals.
 fn log_wifi_diag(label: &str) {
@@ -115,7 +115,6 @@ pub fn connect_wifi(
         }
     }
     let mut ip_address: Option<String> = None;
-    let mut networks = Vec::new();
     if connected {
         info!("WiFi associated, waiting for IP address...");
         blocking_wifi.wait_netif_up()?;
@@ -123,22 +122,6 @@ pub fn connect_wifi(
         let ip_info = blocking_wifi.wifi().sta_netif().get_ip_info()?;
         info!("WiFi connected — IP: {}", ip_info.ip);
         ip_address = Some(ip_info.ip.to_string());
-
-        // Scan for nearby networks (for wifi_scan display view) — done after
-        // connecting so it doesn't delay the connection or cause auth issues.
-        info!("WiFi scanning for nearby networks...");
-        networks = match blocking_wifi.scan() {
-            Ok(aps) => {
-                info!("WiFi scan found {} networks", aps.len());
-                aps.iter()
-                    .map(|ap| (ap.ssid.to_string(), ap.signal_strength))
-                    .collect::<Vec<_>>()
-            }
-            Err(e) => {
-                log::warn!("WiFi scan failed: {}", e);
-                Vec::new()
-            }
-        };
     } else {
         log::warn!("WiFi failed after 5 attempts; will retry later");
     }
@@ -148,7 +131,6 @@ pub fn connect_wifi(
 
     Ok(WifiResult {
         wifi: Box::new(esp_wifi),
-        networks,
         connected,
         ip_address,
     })
@@ -198,19 +180,35 @@ pub fn reconnect_existing(
     let ip_info = blocking_wifi.wifi().sta_netif().get_ip_info()?;
     info!("WiFi reconnected — IP: {}", ip_info.ip);
 
+    Ok(Some(ip_info.ip.to_string()))
+}
+
+/// Scan for nearby networks on an already-connected WiFi interface.
+/// Returns a list of (ssid, rssi) pairs sorted by signal strength.
+pub fn scan_wifi(
+    wifi: &mut EspWifi<'static>,
+    sysloop: EspSystemEventLoop,
+) -> Vec<(String, i8)> {
+    let mut blocking_wifi = match BlockingWifi::wrap(wifi, sysloop) {
+        Ok(bw) => bw,
+        Err(e) => {
+            log::warn!("WiFi scan: failed to wrap: {}", e);
+            return Vec::new();
+        }
+    };
     info!("WiFi scanning for nearby networks...");
-    let networks = match blocking_wifi.scan() {
+    match blocking_wifi.scan() {
         Ok(aps) => {
             info!("WiFi scan found {} networks", aps.len());
-            aps.iter()
+            let mut results: Vec<(String, i8)> = aps.iter()
                 .map(|ap| (ap.ssid.to_string(), ap.signal_strength))
-                .collect::<Vec<_>>()
+                .collect();
+            results.sort_by(|a, b| b.1.cmp(&a.1));
+            results
         }
         Err(e) => {
             log::warn!("WiFi scan failed: {}", e);
             Vec::new()
         }
-    };
-
-    Ok(Some((ip_info.ip.to_string(), networks)))
+    }
 }

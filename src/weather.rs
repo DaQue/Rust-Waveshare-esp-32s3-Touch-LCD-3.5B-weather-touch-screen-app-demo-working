@@ -497,12 +497,10 @@ pub fn fetch_weather(
     );
 
     info!("Fetching current weather...");
-    let weather_json = crate::http_client::https_get(&weather_url)?;
-    let current = parse_current_weather(&weather_json)?;
+    let current = crate::http_client::https_get_json(&weather_url, &[], parse_current_weather)?;
 
     info!("Fetching forecast...");
-    let forecast_json = crate::http_client::https_get(&forecast_url)?;
-    let forecast = parse_forecast(&forecast_json)?;
+    let forecast = crate::http_client::https_get_json(&forecast_url, &[], parse_forecast)?;
 
     Ok((current, forecast))
 }
@@ -608,8 +606,7 @@ pub fn fetch_nws_alerts(scope: &str, user_agent: &str) -> Result<Vec<WeatherAler
         ("Accept", "application/geo+json"),
     ];
     info!("Fetching NWS alerts...");
-    let json = crate::http_client::https_get_with_headers(&url, &headers)?;
-    parse_nws_alerts(&json)
+    crate::http_client::https_get_json(&url, &headers, parse_nws_alerts)
 }
 
 fn discover_geo_coords(user_agent: &str) -> Result<(f64, f64)> {

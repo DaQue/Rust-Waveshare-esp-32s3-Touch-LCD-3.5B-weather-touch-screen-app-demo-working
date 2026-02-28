@@ -10,6 +10,7 @@ pub static DEBUG_IMU: AtomicBool = AtomicBool::new(false);
 
 /// Request flags — console sets these, main loop acts on them.
 pub static REQUEST_I2C_SCAN: AtomicBool = AtomicBool::new(false);
+pub static REQUEST_WIFI_SCAN: AtomicBool = AtomicBool::new(false);
 pub static REQUEST_IMU_READ: AtomicBool = AtomicBool::new(false);
 pub static REQUEST_ORIENTATION_MODE: AtomicI8 = AtomicI8::new(-1);
 pub static REQUEST_ORIENTATION_FLIP: AtomicI8 = AtomicI8::new(-1);

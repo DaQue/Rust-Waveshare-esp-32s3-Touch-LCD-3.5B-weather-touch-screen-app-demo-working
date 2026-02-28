@@ -737,7 +737,6 @@ fn main() -> Result<()> {
 
     // ── 9. WiFi ──
     let mut ip_address = String::new();
-    let mut wifi_networks: Vec<(String, i8)> = Vec::new();
     let mut wifi_ok = false;
     let mut wifi_handle = if !wifi_ssid.is_empty() {
         draw_splash(&mut fb, &format!("Connecting to '{}'...", wifi_ssid));
@@ -748,7 +747,6 @@ fn main() -> Result<()> {
                 if let Some(ip) = result.ip_address {
                     ip_address = ip;
                 }
-                wifi_networks = result.networks;
                 wifi_ok = result.connected;
                 Some(result.wifi)
             }
@@ -823,7 +821,6 @@ fn main() -> Result<()> {
         locked_orientation(state.orientation_mode, state.orientation_flip)
     };
     state.i2c_devices = i2c_devices;
-    state.wifi_networks = wifi_networks;
     state.wifi_ssid = wifi_ssid.clone();
     state.ip_address = ip_address.clone();
     if wifi_ok {
@@ -856,11 +853,15 @@ fn main() -> Result<()> {
         let cfg_weather = cfg.clone();
         std::thread::Builder::new()
             .name("weather".into())
-            .stack_size(16384)
+            .stack_size(16384) // inner-scope fix in https_get_json drops HTTP vars before parse callback
             .spawn(move || {
                 let mut first = true;
                 let mut warned_missing_key = false;
                 let mut consecutive_failures: u32 = 0;
+                // Brief pause before first fetch — SNTP may still be active on
+                // the lwIP thread immediately after sync completes, and starting
+                // a DNS lookup at the same moment causes a spinlock deadlock.
+                std::thread::sleep(std::time::Duration::from_secs(2));
                 loop {
                     let (query, key) = {
                         let c = cfg_weather.lock().unwrap();
@@ -1057,6 +1058,8 @@ fn main() -> Result<()> {
     views::draw_current_view(&mut fb, &state);
     fb.flush_to_panel(ctx.io, ctx.panel, state.orientation);
     state.dirty = false;
+
+    let mut prev_view = state.current_view;
 
     loop {
         let t = now_ms();
@@ -1426,6 +1429,24 @@ fn main() -> Result<()> {
             state.dirty = true;
         }
 
+        // Trigger WiFi scan when user navigates to WifiScan view
+        if state.current_view == views::View::WifiScan && prev_view != views::View::WifiScan {
+            state.wifi_networks.clear();
+            state.wifi_scan_pending = true;
+            debug_flags::REQUEST_WIFI_SCAN.store(true, Ordering::Relaxed);
+            state.dirty = true;
+        }
+        prev_view = state.current_view;
+
+        // WiFi scan execution
+        if debug_flags::REQUEST_WIFI_SCAN.swap(false, Ordering::Relaxed) {
+            if let Some(wifi) = wifi_handle.as_mut() {
+                state.wifi_networks = wifi::scan_wifi(wifi.as_mut(), sysloop.clone());
+            }
+            state.wifi_scan_pending = false;
+            state.dirty = true;
+        }
+
         // Save C/F preference to NVS on toggle
         if state.save_celsius_pref {
             state.save_celsius_pref = false;
@@ -1451,12 +1472,11 @@ fn main() -> Result<()> {
             if let Some(wifi) = wifi_handle.as_mut() {
                 info!("WiFi retry window reached; attempting reconnect...");
                 match wifi::reconnect_existing(wifi.as_mut(), sysloop.clone()) {
-                    Ok(Some((ip, networks))) => {
+                    Ok(Some(ip)) => {
                         wifi_ok = true;
                         ip_address = ip;
                         state.ip_address = ip_address.clone();
                         state.status_text = ip_address.clone();
-                        state.wifi_networks = networks;
                         if sntp.is_none() {
                             match time_sync::sync_time(&timezone) {
                                 Ok(new_sntp) => sntp = Some(new_sntp),
