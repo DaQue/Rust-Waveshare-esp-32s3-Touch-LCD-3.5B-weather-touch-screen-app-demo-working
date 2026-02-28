@@ -257,28 +257,54 @@ fn draw_alert_overlay(fb: &mut Framebuffer, state: &AppState, screen_w: i32, scr
     let body_style = MonoTextStyle::new(&PROFONT_10_POINT, TEXT_PRIMARY);
     let dim_style = MonoTextStyle::new(&PROFONT_10_POINT, TEXT_TERTIARY);
 
+    // Title: kind + count
     let count_text = if state.weather_alerts.len() > 1 {
         format!("{} ({} active)", alert.kind().as_str(), state.weather_alerts.len())
     } else {
         alert.kind().as_str().to_string()
     };
     Text::new(&count_text, Point::new(CARD_MARGIN + 8, y + 14), title_style).draw(fb).ok();
+
+    // Event name
     Text::new(&alert.event, Point::new(CARD_MARGIN + 8, y + 30), body_style).draw(fb).ok();
 
-    let headline = if alert.headline.len() > 46 {
-        format!("{}...", &alert.headline[..43])
-    } else {
-        alert.headline.clone()
-    };
-    Text::new(&headline, Point::new(CARD_MARGIN + 8, y + 44), body_style).draw(fb).ok();
+    // Headline - word-wrapped, up to 2 lines
+    let char_w = 6i32; // PROFONT_10_POINT ~6px/char
+    let line_h = 14i32;
+    let max_chars = ((screen_w - 2 * CARD_MARGIN - 16) / char_w) as usize;
+    let bottom_reserve = y + h - 20;
+    let mut row_y = y + 44;
+    for line in crate::layout::word_wrap(&alert.headline, max_chars).iter().take(2) {
+        if row_y + line_h > bottom_reserve { break; }
+        Text::new(line, Point::new(CARD_MARGIN + 8, row_y), body_style).draw(fb).ok();
+        row_y += line_h;
+    }
 
-    let expires = if alert.expires.len() > 34 {
-        format!("exp {}", &alert.expires[..30])
-    } else {
-        format!("exp {}", alert.expires)
-    };
-    Text::new(&expires, Point::new(CARD_MARGIN + 8, y + h - 18), dim_style).draw(fb).ok();
-    Text::new("(tap icon to close)", Point::new(screen_w - CARD_MARGIN - 8, y + h - 18), dim_style)
-        .draw(fb)
-        .ok();
+    // Description bullets (lines starting with '*')
+    row_y += 2;
+    for raw in alert.description.lines() {
+        if row_y + line_h > bottom_reserve { break; }
+        let raw = raw.trim();
+        if !raw.starts_with('*') { continue; }
+        let content = raw.trim_start_matches('*').trim();
+        let line = if content.len() + 2 > max_chars {
+            format!("- {}...", &content[..max_chars.saturating_sub(5)])
+        } else {
+            format!("- {}", content)
+        };
+        Text::new(&line, Point::new(CARD_MARGIN + 8, row_y), dim_style).draw(fb).ok();
+        row_y += line_h;
+    }
+
+    // Bottom row: expiry left, close hint right-aligned
+    let exp_text = format!("exp {}", crate::weather::format_alert_expiry(&alert.expires));
+    Text::new(&exp_text, Point::new(CARD_MARGIN + 8, y + h - 8), dim_style).draw(fb).ok();
+    Text::with_alignment(
+        "(tap to close)",
+        Point::new(screen_w - CARD_MARGIN - 8, y + h - 8),
+        dim_style,
+        Alignment::Right,
+    )
+    .draw(fb)
+    .ok();
 }

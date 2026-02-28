@@ -941,7 +941,7 @@ fn main() -> Result<()> {
         let nvs_alerts = nvs.clone();
         std::thread::Builder::new()
             .name("alerts".into())
-            .stack_size(12288)
+            .stack_size(32768)
             .spawn(move || {
                 info!(
                     "NWS alerts thread startup delay: {}s",
@@ -1191,6 +1191,12 @@ fn main() -> Result<()> {
                 let fp = alert_fingerprint(&alerts);
                 let changed = !alerts_snapshot_seen || fp != last_alert_fingerprint;
                 let beep_enabled = cfg.lock().unwrap().alerts_beep;
+
+                if changed && !alerts.is_empty() {
+                    for alert in &alerts {
+                        weather::log_alert_to_console(alert);
+                    }
+                }
 
                 if changed && alerts_snapshot_seen && !alerts.is_empty() && beep_enabled {
                     let tone = alert_tone_for(&alerts);

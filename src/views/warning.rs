@@ -15,55 +15,6 @@ const CHAR_W_10PT: i32 = 6;
 /// Line height for PROFONT_10_POINT body text.
 const LINE_H_10PT: i32 = 14;
 
-/// Word-wrap a string to fit within `max_chars` per line.
-/// Returns a Vec of lines (borrowed slices aren't practical here because
-/// we may need to split mid-word for very long words).
-fn word_wrap(text: &str, max_chars: usize) -> Vec<String> {
-    let mut lines = Vec::new();
-    for paragraph in text.split('\n') {
-        let paragraph = paragraph.trim();
-        if paragraph.is_empty() {
-            lines.push(String::new());
-            continue;
-        }
-        let mut line = String::new();
-        for word in paragraph.split_whitespace() {
-            if line.is_empty() {
-                if word.len() > max_chars {
-                    // Force-break very long words
-                    let mut remaining = word;
-                    while remaining.len() > max_chars {
-                        lines.push(remaining[..max_chars].to_string());
-                        remaining = &remaining[max_chars..];
-                    }
-                    line = remaining.to_string();
-                } else {
-                    line = word.to_string();
-                }
-            } else if line.len() + 1 + word.len() > max_chars {
-                lines.push(line);
-                if word.len() > max_chars {
-                    let mut remaining = word;
-                    while remaining.len() > max_chars {
-                        lines.push(remaining[..max_chars].to_string());
-                        remaining = &remaining[max_chars..];
-                    }
-                    line = remaining.to_string();
-                } else {
-                    line = word.to_string();
-                }
-            } else {
-                line.push(' ');
-                line.push_str(word);
-            }
-        }
-        if !line.is_empty() {
-            lines.push(line);
-        }
-    }
-    lines
-}
-
 pub fn draw(fb: &mut Framebuffer, state: &AppState) {
     let (screen_w, screen_h) = screen_size(state.orientation);
 
@@ -200,7 +151,7 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
 
     // Description
     if !alert.description.is_empty() {
-        for line in word_wrap(&alert.description, max_chars) {
+        for line in crate::layout::word_wrap(&alert.description, max_chars) {
             all_lines.push((line, false));
         }
     }
@@ -213,7 +164,7 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
     // Instruction
     if !alert.instruction.is_empty() {
         all_lines.push(("ACTION:".to_string(), false));
-        for line in word_wrap(&alert.instruction, max_chars) {
+        for line in crate::layout::word_wrap(&alert.instruction, max_chars) {
             all_lines.push((line, false));
         }
     }
@@ -225,12 +176,10 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
         true,
     ));
     if !alert.expires.is_empty() {
-        let exp = if alert.expires.len() > 40 {
-            &alert.expires[..40]
-        } else {
-            &alert.expires
-        };
-        all_lines.push((format!("Expires: {}", exp), true));
+        all_lines.push((
+            format!("Expires: {}", crate::weather::format_alert_expiry(&alert.expires)),
+            true,
+        ));
     }
 
     let visible_lines = (text_area_h / LINE_H_10PT) as usize;

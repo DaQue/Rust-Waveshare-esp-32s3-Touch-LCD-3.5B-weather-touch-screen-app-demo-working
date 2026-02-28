@@ -507,6 +507,58 @@ pub fn fetch_weather(
     Ok((current, forecast))
 }
 
+/// Convert an ISO-8601 timestamp like "2026-02-27T08:30:00-06:00" to "Feb 27 8:30 AM".
+pub fn format_alert_expiry(iso: &str) -> String {
+    const MONTHS: [&str; 12] = ["Jan","Feb","Mar","Apr","May","Jun",
+                                 "Jul","Aug","Sep","Oct","Nov","Dec"];
+    let t = match iso.find('T') {
+        Some(i) => i,
+        None => return iso.chars().take(20).collect(),
+    };
+    let date = &iso[..t];
+    let rest = &iso[t + 1..];
+    if date.len() < 10 || rest.len() < 5 {
+        return iso.chars().take(20).collect();
+    }
+    let month: usize = date[5..7].parse().unwrap_or(0);
+    let day: u32 = date[8..10].parse().unwrap_or(0);
+    let hour: u32 = rest[..2].parse().unwrap_or(0);
+    let min: u32 = rest[3..5].parse().unwrap_or(0);
+    let month_str = if month >= 1 && month <= 12 { MONTHS[month - 1] } else { "???" };
+    let (h12, ampm) = if hour == 0 { (12u32, "AM") }
+        else if hour < 12 { (hour, "AM") }
+        else if hour == 12 { (12, "PM") }
+        else { (hour - 12, "PM") };
+    format!("{} {} {}:{:02} {}", month_str, day, h12, min, ampm)
+}
+
+/// Dump a single alert's full text to the serial console at WARN level.
+pub fn log_alert_to_console(alert: &WeatherAlert) {
+    log::warn!("=== NWS ALERT: {} ===", alert.event);
+    log::warn!("  Severity: {}  Urgency: {}  Certainty: {}", alert.severity, alert.urgency, alert.certainty);
+    log::warn!("  Headline: {}", alert.headline);
+    log::warn!("  Expires:  {}", alert.expires);
+    if !alert.description.is_empty() {
+        log::warn!("  --- Description ---");
+        for line in alert.description.lines() {
+            let line = line.trim();
+            if !line.is_empty() {
+                log::warn!("  {}", line);
+            }
+        }
+    }
+    if !alert.instruction.is_empty() {
+        log::warn!("  --- Instruction ---");
+        for line in alert.instruction.lines() {
+            let line = line.trim();
+            if !line.is_empty() {
+                log::warn!("  {}", line);
+            }
+        }
+    }
+    log::warn!("=== END ALERT ===");
+}
+
 pub fn parse_nws_alerts(json: &str) -> Result<Vec<WeatherAlert>> {
     let root: NwsAlertsRoot = serde_json::from_str(json)?;
     let mut out = Vec::new();

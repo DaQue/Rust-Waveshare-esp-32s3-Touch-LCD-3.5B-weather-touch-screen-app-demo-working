@@ -125,6 +125,52 @@ pub fn screen_size(orientation: Orientation) -> (i32, i32) {
 use crate::framebuffer::Framebuffer;
 use embedded_graphics::primitives::{PrimitiveStyleBuilder, Rectangle, RoundedRectangle};
 
+/// Word-wrap `text` to lines of at most `max_chars` characters.
+pub fn word_wrap(text: &str, max_chars: usize) -> Vec<String> {
+    let mut lines = Vec::new();
+    for paragraph in text.split('\n') {
+        let paragraph = paragraph.trim();
+        if paragraph.is_empty() {
+            lines.push(String::new());
+            continue;
+        }
+        let mut line = String::new();
+        for word in paragraph.split_whitespace() {
+            if line.is_empty() {
+                if word.len() > max_chars {
+                    let mut remaining = word;
+                    while remaining.len() > max_chars {
+                        lines.push(remaining[..max_chars].to_string());
+                        remaining = &remaining[max_chars..];
+                    }
+                    line = remaining.to_string();
+                } else {
+                    line = word.to_string();
+                }
+            } else if line.len() + 1 + word.len() > max_chars {
+                lines.push(line);
+                if word.len() > max_chars {
+                    let mut remaining = word;
+                    while remaining.len() > max_chars {
+                        lines.push(remaining[..max_chars].to_string());
+                        remaining = &remaining[max_chars..];
+                    }
+                    line = remaining.to_string();
+                } else {
+                    line = word.to_string();
+                }
+            } else {
+                line.push(' ');
+                line.push_str(word);
+            }
+        }
+        if !line.is_empty() {
+            lines.push(line);
+        }
+    }
+    lines
+}
+
 /// Fill a horizontal line across the full screen width.
 pub fn draw_hline(fb: &mut Framebuffer, y: i32, color: Rgb565) {
     let style = PrimitiveStyleBuilder::new().fill_color(color).build();
