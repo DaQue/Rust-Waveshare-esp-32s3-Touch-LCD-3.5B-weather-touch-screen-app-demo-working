@@ -62,6 +62,7 @@ impl View {
 pub const INDOOR_HISTORY_MAX: usize = 720; // 720 samples @ 5s = 1 hour
 
 /// Central app state shared across views.
+#[derive(Clone)]
 pub struct AppState {
     pub current_view: View,
     pub current_weather: Option<crate::weather::CurrentWeather>,

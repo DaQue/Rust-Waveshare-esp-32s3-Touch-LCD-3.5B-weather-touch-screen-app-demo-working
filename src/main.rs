@@ -71,7 +71,7 @@ const BME_PRESSURE_MAX_HPA: f32 = 1200.0;
 const BME_TEMP_MAX_STEP_F: f32 = 8.0;
 const BME_HUM_MAX_STEP: f32 = 20.0;
 const BME_PRESSURE_MAX_STEP_HPA: f32 = 12.0;
-const TICK_MS: u64 = 100;
+const TICK_MS: u64 = 20;
 const TIME_UPDATE_TICKS: u32 = 10; // every second
 const WIFI_DEBUG_TICKS: u32 = 100; // every 10 seconds
 const ORIENTATION_POLL_TICKS: u32 = 2; // every 200ms
@@ -360,18 +360,12 @@ fn detect_orientation_from_imu(r: &qmi8658::ImuReading) -> Option<layout::Orient
 
 fn apply_orientation(
     state: &mut views::AppState,
-    fb: &mut framebuffer::Framebuffer,
     next: layout::Orientation,
 ) {
     if state.orientation == next {
         return;
     }
-    let (old_w, old_h) = framebuffer_dims(state.orientation);
-    let (new_w, new_h) = framebuffer_dims(next);
     state.orientation = next;
-    if old_w != new_w || old_h != new_h {
-        *fb = framebuffer::Framebuffer::new(new_w, new_h);
-    }
     state.dirty = true;
 }
 
@@ -417,6 +411,19 @@ struct LcdContext {
     io: esp_idf_sys::esp_lcd_panel_io_handle_t,
     panel: esp_idf_sys::esp_lcd_panel_handle_t,
     _vendor_config: Box<Axs15231bVendorConfig>,
+}
+
+// Safety: C handles are only called from the render thread after LcdContext
+// is moved there.
+unsafe impl Send for LcdContext {}
+
+impl LcdContext {
+    /// Flush a framebuffer to the panel.
+    /// Calling a method forces the closure to capture `ctx` (whole struct, Send)
+    /// rather than capturing individual raw-pointer fields (not Send).
+    fn flush_fb(&self, fb: &framebuffer::Framebuffer, orientation: layout::Orientation) {
+        fb.flush_to_panel(self.io, self.panel, orientation);
+    }
 }
 
 fn init_display() -> Result<LcdContext> {
@@ -607,7 +614,7 @@ fn main() -> Result<()> {
 
     // Show splash before backlight so first frame is ready
     draw_splash(&mut fb, "Starting...");
-    fb.flush_to_panel(ctx.io, ctx.panel, layout::Orientation::Landscape);
+    ctx.flush_fb(&fb, layout::Orientation::Landscape);
     enable_backlight();
 
     // ── 3. Peripherals ──
@@ -740,7 +747,7 @@ fn main() -> Result<()> {
     let mut wifi_ok = false;
     let mut wifi_handle = if !wifi_ssid.is_empty() {
         draw_splash(&mut fb, &format!("Connecting to '{}'...", wifi_ssid));
-        fb.flush_to_panel(ctx.io, ctx.panel, layout::Orientation::Landscape);
+        ctx.flush_fb(&fb, layout::Orientation::Landscape);
         info!("Connecting to WiFi '{}'...", wifi_ssid);
         match wifi::connect_wifi(peripherals.modem, sysloop.clone(), &wifi_ssid, &wifi_pass) {
             Ok(result) => {
@@ -763,7 +770,7 @@ fn main() -> Result<()> {
     // ── 10. NTP time sync ──
     let mut sntp = if wifi_ok {
         draw_splash(&mut fb, "Syncing time...");
-        fb.flush_to_panel(ctx.io, ctx.panel, layout::Orientation::Landscape);
+        ctx.flush_fb(&fb, layout::Orientation::Landscape);
         match time_sync::sync_time(&timezone) {
             Ok(sntp) => Some(sntp),
             Err(e) => {
@@ -1054,9 +1061,33 @@ fn main() -> Result<()> {
     let mut last_alert_beep_ms: Option<u32> = None;
     let mut watch_beeps_remaining: u8 = 0;
 
-    // Initial draw
-    views::draw_current_view(&mut fb, &state);
-    fb.flush_to_panel(ctx.io, ctx.panel, state.orientation);
+    // ── Render thread: owns fb + ctx, draws on demand ──
+    let (render_tx, render_rx) = std::sync::mpsc::sync_channel::<views::AppState>(1);
+
+    std::thread::Builder::new()
+        .name("render".into())
+        .stack_size(16384)
+        .spawn(move || {
+            let mut current_orientation = layout::Orientation::Landscape;
+            loop {
+                let snapshot = match render_rx.recv() {
+                    Ok(s) => s,
+                    Err(_) => break,
+                };
+                // Resize framebuffer if orientation changed
+                if snapshot.orientation != current_orientation {
+                    let (w, h) = framebuffer_dims(snapshot.orientation);
+                    fb = framebuffer::Framebuffer::new(w, h);
+                    current_orientation = snapshot.orientation;
+                }
+                views::draw_current_view(&mut fb, &snapshot);
+                ctx.flush_fb(&fb, snapshot.orientation);
+            }
+        })
+        .expect("failed to spawn render thread");
+
+    // Initial draw via render channel
+    let _ = render_tx.send(state.clone());
     state.dirty = false;
 
     let mut prev_view = state.current_view;
@@ -1365,7 +1396,7 @@ fn main() -> Result<()> {
             if mode != config::OrientationMode::Auto {
                 let target = locked_orientation(mode, state.orientation_flip);
                 if state.orientation != target {
-                    apply_orientation(&mut state, &mut fb, target);
+                    apply_orientation(&mut state, target);
                     last_orientation_change_ms = now_ms();
                     info!("Orientation: {:?}", state.orientation);
                 }
@@ -1378,7 +1409,7 @@ fn main() -> Result<()> {
             if state.orientation_mode != config::OrientationMode::Auto {
                 let target = locked_orientation(state.orientation_mode, state.orientation_flip);
                 if state.orientation != target {
-                    apply_orientation(&mut state, &mut fb, target);
+                    apply_orientation(&mut state, target);
                     last_orientation_change_ms = now_ms();
                     info!("Orientation: {:?}", state.orientation);
                 }
@@ -1404,7 +1435,7 @@ fn main() -> Result<()> {
                             orientation_candidate_count = 1;
                         }
                         if orientation_candidate_count >= ORIENTATION_CONFIRM_SAMPLES {
-                            apply_orientation(&mut state, &mut fb, next);
+                            apply_orientation(&mut state, next);
                             orientation_candidate_count = 0;
                             last_orientation_change_ms = now_ms();
                             info!("Auto-rotation -> {:?}", state.orientation);
@@ -1526,11 +1557,12 @@ fn main() -> Result<()> {
             }
         }
 
-        // Redraw if needed
+        // Redraw if needed — send snapshot to render thread
         if state.dirty {
-            views::draw_current_view(&mut fb, &state);
-            fb.flush_to_panel(ctx.io, ctx.panel, state.orientation);
-            state.dirty = false;
+            if render_tx.try_send(state.clone()).is_ok() {
+                state.dirty = false;
+            }
+            // if try_send fails (render busy), dirty stays — retried next 20ms tick
         }
 
         tick_count = tick_count.wrapping_add(1);
