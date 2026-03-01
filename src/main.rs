@@ -623,7 +623,18 @@ fn main() -> Result<()> {
     let nvs_partition = EspDefaultNvsPartition::take()?;
 
     // ── 4. NVS config ──
-    let mut nvs = EspNvs::new(nvs_partition.clone(), config::NS, true)?;
+    // If NVS is corrupted (e.g. after reflash with different encryption keys),
+    // auto-erase and reinitialise rather than boot-looping.
+    let mut nvs = match EspNvs::new(nvs_partition.clone(), config::NS, true) {
+        Ok(nvs) => nvs,
+        Err(e) => {
+            log::error!("NVS open failed ({}); erasing partition and reinitialising", e);
+            draw_splash(&mut fb, "NVS error — resetting config...");
+            ctx.flush_fb(&fb, layout::Orientation::Landscape);
+            unsafe { esp_idf_sys::nvs_flash_erase() };
+            EspNvs::new(nvs_partition.clone(), config::NS, true)?
+        }
+    };
     let mut cfg = config::Config::load(&nvs);
     let legacy_nws_ua = "waveshare_s3_3p/0.1 (contact: unset)";
     let default_nws_ua = format!(
@@ -645,6 +656,11 @@ fn main() -> Result<()> {
 
     let nvs = Arc::new(Mutex::new(nvs));
     let cfg = Arc::new(Mutex::new(cfg));
+    // Force Rust pthread mutex lazy-init now while the heap is clean.
+    // Without this, the first lock (line ~819) can crash in heap_caps_alloc
+    // if the heap has been disturbed by board/display init and WiFi never ran.
+    drop(nvs.lock().unwrap());
+    drop(cfg.lock().unwrap());
 
     let weather_refresh_flag: Arc<AtomicBool> = Arc::new(AtomicBool::new(false));
 

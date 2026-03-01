@@ -1,5 +1,7 @@
-# Increase main task stack for Rust std runtime
-CONFIG_ESP_MAIN_TASK_STACK_SIZE=32768
+# Main task stack — reduced from 32K now that rendering is on its own thread
+# and AppState heavy fields (HvacDetector, PressureHistory) are heap-boxed.
+# Peak usage: splash screen draws + WiFi/NTP init + main loop (~8K).
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=16384
 
 # Partition table with NVS keys partition for encrypted NVS.
 CONFIG_PARTITION_TABLE_SINGLE_APP_ENCRYPTED_NVS=y
