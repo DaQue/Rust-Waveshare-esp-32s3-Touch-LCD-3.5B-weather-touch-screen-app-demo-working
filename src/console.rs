@@ -97,7 +97,7 @@ fn process_line(
         "beep" => handle_beep(sub),
         "about" => {
             let cfg = config.lock().unwrap();
-            info!("app: waveshare_s3_3p");
+            info!("app: waveshare_esp32-s3-touch-lcd-3p5b");
             info!("firmware: v{}", env!("CARGO_PKG_VERSION"));
             info!("author: David (DaQue)");
             info!("device: Waveshare ESP32-S3 3.5B");

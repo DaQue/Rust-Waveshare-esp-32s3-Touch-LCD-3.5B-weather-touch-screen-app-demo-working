@@ -598,7 +598,7 @@ fn main() -> Result<()> {
     esp_idf_svc::log::EspLogger::initialize_default();
 
     info!(
-        "BOOT — waveshare_s3_3p weather dashboard v{}",
+        "BOOT — waveshare_esp32-s3-touch-lcd-3p5b weather dashboard v{}",
         env!("CARGO_PKG_VERSION")
     );
 
@@ -636,9 +636,9 @@ fn main() -> Result<()> {
         }
     };
     let mut cfg = config::Config::load(&nvs);
-    let legacy_nws_ua = "waveshare_s3_3p/0.1 (contact: unset)";
+    let legacy_nws_ua = "waveshare_esp32-s3-touch-lcd-3p5b/0.1 (contact: unset)";
     let default_nws_ua = format!(
-        "waveshare_s3_3p/{} (contact: unset)",
+        "waveshare_esp32-s3-touch-lcd-3p5b/{} (contact: unset)",
         env!("CARGO_PKG_VERSION")
     );
     if cfg.nws_user_agent == legacy_nws_ua {
