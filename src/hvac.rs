@@ -50,6 +50,7 @@ pub struct HvacStats {
 
 // ── Detector ────────────────────────────────────────────────────────
 
+#[derive(Clone)]
 pub struct HvacDetector {
     // Detection state
     current_state: HvacState,

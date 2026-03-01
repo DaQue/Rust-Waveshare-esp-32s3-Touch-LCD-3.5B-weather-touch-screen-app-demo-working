@@ -62,6 +62,7 @@ impl View {
 pub const INDOOR_HISTORY_MAX: usize = 720; // 720 samples @ 5s = 1 hour
 
 /// Central app state shared across views.
+#[derive(Clone)]
 pub struct AppState {
     pub current_view: View,
     pub current_weather: Option<crate::weather::CurrentWeather>,
@@ -91,8 +92,8 @@ pub struct AppState {
     pub warning_active: bool,
     pub warning_silenced_fingerprint: String,
     pub warning_scroll: usize,
-    pub hvac: crate::hvac::HvacDetector,
-    pub pressure_history: crate::pressure_history::PressureHistory,
+    pub hvac: Box<crate::hvac::HvacDetector>,
+    pub pressure_history: Box<crate::pressure_history::PressureHistory>,
     pub orientation: Orientation,
     pub orientation_mode: OrientationMode,
     pub orientation_flip: bool,
@@ -130,8 +131,8 @@ impl AppState {
             warning_active: false,
             warning_silenced_fingerprint: String::new(),
             warning_scroll: 0,
-            hvac: crate::hvac::HvacDetector::new(5.0, 30.0),
-            pressure_history: crate::pressure_history::PressureHistory::new(),
+            hvac: Box::new(crate::hvac::HvacDetector::new(5.0, 30.0)),
+            pressure_history: Box::new(crate::pressure_history::PressureHistory::new()),
             orientation: Orientation::Landscape,
             orientation_mode: OrientationMode::Auto,
             orientation_flip: false,

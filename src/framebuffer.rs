@@ -350,6 +350,10 @@ impl DrawTarget for Framebuffer {
     }
 }
 
+// Safety: Framebuffer's raw ptrs (PSRAM pixel buf + DMA buf) are owned
+// exclusively by the render thread after it is moved there.
+unsafe impl Send for Framebuffer {}
+
 impl Drop for Framebuffer {
     fn drop(&mut self) {
         unsafe {

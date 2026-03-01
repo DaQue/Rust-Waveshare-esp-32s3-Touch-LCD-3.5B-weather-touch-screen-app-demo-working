@@ -24,6 +24,7 @@ pub struct PressureSample {
 
 // ── Ring buffer ─────────────────────────────────────────────────────
 
+#[derive(Clone)]
 pub struct PressureHistory {
     buf: [PressureSample; CAPACITY],
     idx: usize,

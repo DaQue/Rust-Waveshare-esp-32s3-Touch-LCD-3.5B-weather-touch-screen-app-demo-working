@@ -8,7 +8,7 @@ use crate::framebuffer::Framebuffer;
 use crate::layout::*;
 use crate::views::AppState;
 
-const FW_LABEL: &str = concat!("waveshare_s3_3p v", env!("CARGO_PKG_VERSION"));
+const FW_LABEL: &str = concat!("waveshare_esp32-s3-touch-lcd-3p5b v", env!("CARGO_PKG_VERSION"));
 
 pub fn draw(fb: &mut Framebuffer, state: &AppState) {
     let (screen_w, screen_h) = screen_size(state.orientation);
