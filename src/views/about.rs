@@ -8,7 +8,7 @@ use crate::framebuffer::Framebuffer;
 use crate::layout::*;
 use crate::views::AppState;
 
-const FW_LABEL: &str = concat!("waveshare_esp32-s3-touch-lcd-3p5b v", env!("CARGO_PKG_VERSION"));
+const FW_VERSION: &str = concat!("v", env!("CARGO_PKG_VERSION"));
 
 pub fn draw(fb: &mut Framebuffer, state: &AppState) {
     let (screen_w, screen_h) = screen_size(state.orientation);
@@ -45,7 +45,7 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
 
     // Firmware
     Text::new("Firmware", Point::new(lx, y), label_style).draw(fb).ok();
-    Text::new(FW_LABEL, Point::new(vx, y), value_style).draw(fb).ok();
+    Text::new(FW_VERSION, Point::new(vx, y), value_style).draw(fb).ok();
     y += line_h;
 
     // IP
