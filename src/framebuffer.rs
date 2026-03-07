@@ -156,6 +156,8 @@ impl Framebuffer {
                     py_end,
                     dma_slice.as_ptr().cast(),
                 );
+                // Yield between chunks so IDLE1 gets scheduled and feeds the WDT.
+                esp_idf_sys::vTaskDelay(1);
             }
 
             py = py_end;
@@ -199,6 +201,7 @@ impl Framebuffer {
                     py_end,
                     dma_slice.as_ptr().cast(),
                 );
+                esp_idf_sys::vTaskDelay(1);
             }
 
             py = py_end;
@@ -244,6 +247,7 @@ impl Framebuffer {
                     py_end,
                     dma_slice.as_ptr().cast(),
                 );
+                esp_idf_sys::vTaskDelay(1);
             }
 
             py = py_end;
@@ -289,6 +293,7 @@ impl Framebuffer {
                     py_end,
                     dma_slice.as_ptr().cast(),
                 );
+                esp_idf_sys::vTaskDelay(1);
             }
             py = py_end;
         }
@@ -312,18 +317,12 @@ impl DrawTarget for Framebuffer {
         let w = self.width;
         let h = self.height;
         let buf = self.as_mut_slice();
-        let mut wrote = 0usize;
         for Pixel(point, color) in pixels {
             let x = point.x;
             let y = point.y;
             if x >= 0 && y >= 0 && (x as u32) < w && (y as u32) < h {
                 let idx = (y as u32 * w + x as u32) as usize;
                 buf[idx] = RawU16::from(color).into_inner();
-                wrote = wrote.wrapping_add(1);
-                // Long icon/frame draws can starve IDLE0; yield periodically.
-                if wrote.is_multiple_of(1024) {
-                    unsafe { esp_idf_sys::vTaskDelay(0) };
-                }
             }
         }
         Ok(())
@@ -335,15 +334,10 @@ impl DrawTarget for Framebuffer {
         let area = area.intersection(&display);
         let w = self.width;
         let buf = self.as_mut_slice();
-        let mut wrote = 0usize;
         for y in area.rows() {
             let row_start = (y as u32 * w) as usize;
             for x in area.columns() {
                 buf[row_start + x as usize] = raw;
-                wrote = wrote.wrapping_add(1);
-                if wrote.is_multiple_of(2048) {
-                    unsafe { esp_idf_sys::vTaskDelay(0) };
-                }
             }
         }
         Ok(())

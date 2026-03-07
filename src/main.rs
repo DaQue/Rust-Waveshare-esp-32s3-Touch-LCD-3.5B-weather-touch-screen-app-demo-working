@@ -1091,14 +1091,25 @@ fn main() -> Result<()> {
                     Ok(s) => s,
                     Err(_) => break,
                 };
-                // Resize framebuffer if orientation changed
+                // Only reallocate framebuffer when the logical pixel dimensions
+                // change (portrait <-> landscape).  Switching between Landscape
+                // and LandscapeFlipped (or Portrait and PortraitFlipped) uses the
+                // same pixel dimensions, so reallocating is unnecessary — and it
+                // momentarily holds TWO 12.5 KB DMA buffers in SRAM simultaneously,
+                // permanently fragmenting the heap and breaking subsequent TLS.
                 if snapshot.orientation != current_orientation {
                     let (w, h) = framebuffer_dims(snapshot.orientation);
-                    fb = framebuffer::Framebuffer::new(w, h);
+                    let sz = embedded_graphics::prelude::OriginDimensions::size(&fb);
+                    if w != sz.width || h != sz.height {
+                        fb = framebuffer::Framebuffer::new(w, h);
+                    }
                     current_orientation = snapshot.orientation;
                 }
                 views::draw_current_view(&mut fb, &snapshot);
                 ctx.flush_fb(&fb, snapshot.orientation);
+                // Yield to IDLE1 after each frame so the Task Watchdog is fed.
+                // vTaskDelay(0) is a no-op in FreeRTOS; minimum is 1 tick.
+                unsafe { esp_idf_sys::vTaskDelay(1) };
             }
         })
         .expect("failed to spawn render thread");
@@ -1576,12 +1587,21 @@ fn main() -> Result<()> {
             }
         }
 
-        // Redraw if needed — send snapshot to render thread
+        // Redraw if needed — send snapshot to render thread.
+        // Guard: skip clone if SRAM is too fragmented (largest contiguous
+        // block < 8 KB).  Cloning AppState allocates Strings/Vecs from SRAM;
+        // doing so during an active TLS handshake on the weather thread can
+        // exhaust the heap.  The render thread keeps the previous frame and
+        // we retry next tick when things settle.
         if state.dirty {
-            if render_tx.try_send(state.clone()).is_ok() {
-                state.dirty = false;
+            let largest_sram = unsafe {
+                esp_idf_sys::heap_caps_get_largest_free_block(esp_idf_sys::MALLOC_CAP_INTERNAL)
+            };
+            if largest_sram >= 8_000 {
+                if render_tx.try_send(state.clone()).is_ok() {
+                    state.dirty = false;
+                }
             }
-            // if try_send fails (render busy), dirty stays — retried next 20ms tick
         }
 
         tick_count = tick_count.wrapping_add(1);

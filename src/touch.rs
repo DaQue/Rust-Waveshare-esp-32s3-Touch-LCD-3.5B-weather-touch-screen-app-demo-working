@@ -23,6 +23,7 @@ const TOUCH_SWIPE_MIN_X_PX: i32 = 64;
 const TOUCH_SWIPE_MAX_Y_PX: i32 = 80;
 const TOUCH_SWIPE_MIN_Y_PX: i32 = 48;
 const TOUCH_SWIPE_COOLDOWN_MS: u32 = 300;
+const TOUCH_TAP_COOLDOWN_MS: u32 = 500;
 const TOUCH_TAP_MAX_MOVE_PX: i32 = 18;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -37,11 +38,15 @@ pub enum Gesture {
 
 pub struct TouchState {
     pressed: bool,
+    /// How many consecutive polls have reported a touch while not yet confirmed pressed.
+    /// A real finger contact lasts many polls; ghost events last exactly 1 poll.
+    confirm_count: u8,
     start_x: i16,
     start_y: i16,
     last_x: i16,
     last_y: i16,
     last_swipe_ms: u32,
+    last_tap_ms: u32,
     poll_count: u32,
     err_count: u32,
     touch_count: u32,
@@ -51,11 +56,13 @@ impl TouchState {
     pub fn new() -> Self {
         Self {
             pressed: false,
+            confirm_count: 0,
             start_x: 0,
             start_y: 0,
             last_x: 0,
             last_y: 0,
             last_swipe_ms: 0,
+            last_tap_ms: 0,
             poll_count: 0,
             err_count: 0,
             touch_count: 0,
@@ -87,15 +94,27 @@ impl TouchState {
             let (x, y) = map_to_orientation(px, py, orientation);
             self.touch_count += 1;
             if !self.pressed {
-                self.pressed = true;
-                self.start_x = x;
-                self.start_y = y;
-                dbg_touch!("TOUCH down at ({}, {})", x, y);
+                // Require 2 consecutive polls before confirming a press.
+                // Ghost events from the CST3240 last exactly 1 poll; real
+                // finger contact lasts many polls (a 50ms tap = 2-3 polls
+                // at 20ms tick rate).
+                self.confirm_count = self.confirm_count.saturating_add(1);
+                if self.confirm_count >= 3 {
+                    self.pressed = true;
+                    self.start_x = x;
+                    self.start_y = y;
+                    dbg_touch!("TOUCH down at ({}, {}) (confirmed after {} polls)", x, y, self.confirm_count);
+                } else {
+                    dbg_touch!("TOUCH pending confirm ({}/3) at ({}, {})", self.confirm_count, x, y);
+                }
             }
             self.last_x = x;
             self.last_y = y;
             return Gesture::None;
         }
+
+        // No touch this poll — reset confirm counter.
+        self.confirm_count = 0;
 
         if !self.pressed {
             return Gesture::None;
@@ -114,8 +133,13 @@ impl TouchState {
             self.start_x, self.start_y, self.last_x, self.last_y, dx, dy
         );
 
-        // Tap
+        // Tap (with cooldown to suppress ghost touches after a real tap)
         if abs_dx <= TOUCH_TAP_MAX_MOVE_PX && abs_dy <= TOUCH_TAP_MAX_MOVE_PX {
+            if now_ms.wrapping_sub(self.last_tap_ms) < TOUCH_TAP_COOLDOWN_MS {
+                dbg_touch!("TOUCH -> Tap suppressed (cooldown)");
+                return Gesture::None;
+            }
+            self.last_tap_ms = now_ms;
             dbg_touch!("TOUCH -> Tap at ({}, {})", self.last_x, self.last_y);
             return Gesture::Tap {
                 x: self.last_x,
