@@ -1,6 +1,7 @@
 use embedded_graphics::{
     mono_font::MonoTextStyle,
     prelude::*,
+    primitives::{Triangle, PrimitiveStyle},
     text::{Alignment, Text},
 };
 use profont::{PROFONT_10_POINT, PROFONT_12_POINT, PROFONT_14_POINT, PROFONT_24_POINT};
@@ -12,6 +13,31 @@ use crate::views::AppState;
 
 fn f_to_c(f: f32) -> f32 {
     (f - 32.0) * 5.0 / 9.0
+}
+
+/// Returns 1 (rising), -1 (falling), or 0 (steady/insufficient data).
+fn outdoor_temp_trend(history: &std::collections::VecDeque<f32>) -> i8 {
+    let len = history.len();
+    if len < 3 { return 0; }
+    let diff = history[len - 1] - history[len - 3];
+    if diff > 1.5 { 1 } else if diff < -1.5 { -1 } else { 0 }
+}
+
+fn draw_temp_trend(fb: &mut Framebuffer, trend: i8, cx: i32, cy: i32) {
+    let (color, pts) = match trend {
+        1 => (
+            rgb(100, 220, 100), // green — rising
+            [Point::new(cx, cy - 9), Point::new(cx - 8, cy + 7), Point::new(cx + 8, cy + 7)],
+        ),
+        -1 => (
+            rgb(100, 160, 255), // blue — falling
+            [Point::new(cx, cy + 9), Point::new(cx - 8, cy - 7), Point::new(cx + 8, cy - 7)],
+        ),
+        _ => return,
+    };
+    Triangle::new(pts[0], pts[1], pts[2])
+        .into_styled(PrimitiveStyle::with_fill(color))
+        .draw(fb).ok();
 }
 
 pub fn draw(fb: &mut Framebuffer, state: &AppState) {
@@ -103,6 +129,10 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
         let hint_style = MonoTextStyle::new(&PROFONT_10_POINT, TEXT_BOTTOM);
 
         Text::new(&temp_text, Point::new(120, card_top + 46), temp_style).draw(fb).ok();
+        let trend = outdoor_temp_trend(&state.outdoor_temp_history);
+        if trend != 0 {
+            draw_temp_trend(fb, trend, 290, card_top + 36);
+        }
         Text::new(&feels_text, Point::new(120, card_top + 72), feels_style).draw(fb).ok();
         Text::new(&cw.condition, Point::new(120, card_top + 94), cond_style).draw(fb).ok();
 

@@ -690,11 +690,11 @@ fn main() -> Result<()> {
     }
 
     // ── 7. BME280 sensor ──
-    let bme280 = bme280_sensor::Bme280::init(&mut i2c);
+    let mut bme280 = bme280_sensor::Bme280::init(&mut i2c);
     if bme280.is_some() {
         info!("BME280 sensor ready");
     } else {
-        log::warn!("BME280 init failed — sensor unavailable");
+        log::warn!("BME280 init failed — will retry every 30s");
     }
 
     // ── 8. IMU (QMI8658) ──
@@ -934,8 +934,26 @@ fn main() -> Result<()> {
                             } else {
                                 info!("Weather fetch failed ({} consecutive)", consecutive_failures);
                             }
-                            // Retry sleep that can be interrupted by a manual refresh request.
-                            for _ in 0..WEATHER_RETRY_SECS {
+                            // After 60 consecutive failures (~30min), reboot to recover
+                            // from mbedTLS heap fragmentation that cannot self-heal.
+                            if consecutive_failures >= 60 {
+                                log::warn!(
+                                    "Weather: {} consecutive failures — rebooting to recover heap",
+                                    consecutive_failures
+                                );
+                                std::thread::sleep(Duration::from_secs(3));
+                                unsafe { esp_idf_sys::esp_restart(); }
+                            }
+                            // Exponential backoff: slow retry rate when failures accumulate
+                            // to reduce heap fragmentation from repeated failed TLS handshakes.
+                            let retry_secs = if consecutive_failures >= 30 {
+                                120
+                            } else if consecutive_failures >= 10 {
+                                60
+                            } else {
+                                WEATHER_RETRY_SECS
+                            };
+                            for _ in 0..retry_secs {
                                 if refresh.swap(false, Ordering::Relaxed) {
                                     info!("Weather refresh requested");
                                     break;
@@ -1063,6 +1081,7 @@ fn main() -> Result<()> {
     // ── 13. Main event loop ──
     info!("Entering main loop");
     let mut last_bme_ms: u32 = 0;
+    let mut last_bme_init_ms: u32 = 0;
     let mut bme_reject_streak: u16 = 0;
     let mut last_hvac_detect_ms: u32 = 0;
     let mut last_hvac_record_ms: u32 = 0;
@@ -1130,9 +1149,17 @@ fn main() -> Result<()> {
                 info!("Gesture {:?} -> view {:?}", gesture, state.current_view);
             }
 
-        // BME280 read
+        // BME280 read (or retry init if not yet found)
         if t.wrapping_sub(last_bme_ms) >= BME280_INTERVAL_MS {
             last_bme_ms = t;
+            if bme280.is_none() && t.wrapping_sub(last_bme_init_ms) >= 30_000 {
+                last_bme_init_ms = t;
+                bme280 = bme280_sensor::Bme280::init(&mut i2c);
+                if bme280.is_some() {
+                    info!("BME280 found on retry — sensor now active");
+                    bme_reject_streak = 0;
+                }
+            }
             if let Some(ref sensor) = bme280 {
                 match sensor.read(&mut i2c) {
                   Some(reading) => {
@@ -1229,8 +1256,14 @@ fn main() -> Result<()> {
                     "{}, {} | {}",
                     current.city, current.country, current.condition
                 );
+                let temp_f = current.temp_f;
                 state.current_weather = Some(current);
                 state.forecast = Some(forecast);
+                // Push outdoor temp for trend arrow (keep ~12 readings ≈ 2h of history)
+                state.outdoor_temp_history.push_back(temp_f);
+                if state.outdoor_temp_history.len() > 12 {
+                    state.outdoor_temp_history.pop_front();
+                }
                 state.status_text = ip_address.clone();
                 state.weather_stale = false;
                 last_weather_success_ms = Some(t);

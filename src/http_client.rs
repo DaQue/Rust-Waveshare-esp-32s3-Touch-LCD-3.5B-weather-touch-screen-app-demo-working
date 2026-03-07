@@ -99,7 +99,24 @@ fn http_fetch_into(url: &str, headers: &[(&str, &str)], buf: &mut PsramBuf) -> R
     let free_internal = unsafe {
         esp_idf_sys::heap_caps_get_free_size(esp_idf_sys::MALLOC_CAP_INTERNAL)
     };
-    info!("HTTP fetch: internal SRAM free = {} KB", free_internal / 1024);
+    let largest_block = unsafe {
+        esp_idf_sys::heap_caps_get_largest_free_block(esp_idf_sys::MALLOC_CAP_INTERNAL)
+    };
+    info!(
+        "HTTP fetch: internal SRAM free = {} KB, largest block = {} KB",
+        free_internal / 1024,
+        largest_block / 1024
+    );
+    // Bail early if the heap is catastrophically fragmented — individual
+    // allocations of a few hundred bytes failing means the allocator has
+    // almost nothing left contiguous.  40 KB was wrong (WiFi leaves the
+    // largest block at ~31 KB normally); 4 KB catches only true exhaustion.
+    if largest_block < 4_000 {
+        bail!(
+            "SRAM too fragmented for TLS ({} KB largest block)",
+            largest_block / 1024
+        );
+    }
 
     let connection = EspHttpConnection::new(&make_config())?;
     let mut client = Client::wrap(connection);
