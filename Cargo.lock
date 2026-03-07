@@ -1551,8 +1551,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "waveshare_s3_3p"
-version = "0.2.9"
+name = "waveshare_esp32-s3-touch-lcd-3p5b"
+version = "0.2.11"
 dependencies = [
  "anyhow",
  "embedded-graphics",

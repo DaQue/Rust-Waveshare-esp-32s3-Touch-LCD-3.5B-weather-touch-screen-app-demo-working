@@ -76,6 +76,12 @@ fn make_config() -> Configuration {
         timeout: Some(std::time::Duration::from_millis(TIMEOUT_MS)),
         use_global_ca_store: true,
         crt_bundle_attach: Some(esp_idf_sys::esp_crt_bundle_attach),
+        // OWM forecast response headers exceed 512B (the default).  Without
+        // this the HTTP client tries to realloc mid-request when SRAM is
+        // nearly exhausted by the TLS context, causing a 2928-byte malloc
+        // failure and a hard abort.  Pre-allocating 2048B before the TLS
+        // handshake gives enough headroom for forecast headers to fit.
+        buffer_size: Some(2048),
         ..Default::default()
     }
 }

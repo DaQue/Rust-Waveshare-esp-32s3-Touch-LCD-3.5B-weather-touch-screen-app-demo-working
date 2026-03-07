@@ -7,6 +7,7 @@ mod http_client;
 mod hvac;
 mod layout;
 mod pressure_history;
+mod psbox;
 mod qmi8658;
 mod speaker;
 mod touch;
@@ -1494,11 +1495,13 @@ fn main() -> Result<()> {
             state.dirty = true;
         }
 
-        // Save C/F preference to NVS on toggle
+        // Save C/F preference to NVS on toggle.
+        // Only clear the flag after a successful save so that a failed
+        // try_lock() (NVS held by another thread) is retried next tick.
         if state.save_celsius_pref {
-            state.save_celsius_pref = false;
             if let Ok(mut nvs) = nvs.try_lock() {
                 let _ = config::Config::save_use_celsius(&mut nvs, state.use_celsius);
+                state.save_celsius_pref = false;
             }
         }
 
