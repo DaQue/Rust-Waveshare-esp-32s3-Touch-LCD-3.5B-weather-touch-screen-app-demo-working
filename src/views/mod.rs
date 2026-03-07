@@ -7,6 +7,7 @@ pub mod i2c_scan;
 pub mod wifi_scan;
 pub mod about;
 pub mod warning;
+pub mod nav_menu;
 
 use std::collections::VecDeque;
 use crate::config::OrientationMode;
@@ -14,46 +15,71 @@ use crate::framebuffer::Framebuffer;
 use crate::layout::{self, Orientation};
 use crate::touch::Gesture;
 
-/// Views in navigation order (matches C factory cycle).
+/// Views grouped by category.
+///
+/// Navigation groups:
+///   Weather:  Now <-> Forecast
+///   Sensors:  Indoor <-> Hvac <-> PressureHvac
+///   System:   I2cScan <-> WifiScan <-> About
+///
+/// Swiping left/right moves within the current group.
+/// Reaching a group boundary (or swiping left from Now) opens NavMenu.
+/// Center-header tap on any view returns to Now.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum View {
+    // Weather group
+    Now,
+    Forecast,
+    // Sensors group
     Indoor,
     Hvac,
     PressureHvac,
-    Now,
-    Forecast,
+    // System group
     I2cScan,
     WifiScan,
     About,
+    // Special
+    NavMenu,
     Warning,
 }
 
 impl View {
-    pub fn next(self) -> View {
+    /// Next view within the current group, or None at the group boundary.
+    /// None from Now means SwipeLeft → NavMenu (the jump page).
+    /// Forecast is reached by tapping the preview card on Now, not by swiping.
+    pub fn next(self) -> Option<View> {
         match self {
-            View::Indoor => View::Hvac,
-            View::Hvac => View::PressureHvac,
-            View::PressureHvac => View::Now,
-            View::Now => View::Forecast,
-            View::Forecast => View::I2cScan,
-            View::I2cScan => View::WifiScan,
-            View::WifiScan => View::About,
-            View::About => View::Indoor,
-            View::Warning => View::Now,
+            View::Now          => None, // SwipeLeft on home → NavMenu
+            View::Forecast     => None,
+            View::Indoor       => Some(View::Hvac),
+            View::Hvac         => Some(View::PressureHvac),
+            View::PressureHvac => None,
+            View::I2cScan      => Some(View::WifiScan),
+            View::WifiScan     => Some(View::About),
+            View::About        => None,
+            _                  => None,
         }
     }
 
-    pub fn prev(self) -> View {
+    /// Previous view within the current group, or None at the group boundary.
+    pub fn prev(self) -> Option<View> {
         match self {
-            View::Indoor => View::About,
-            View::Hvac => View::Indoor,
-            View::PressureHvac => View::Hvac,
-            View::Now => View::PressureHvac,
-            View::Forecast => View::Now,
-            View::I2cScan => View::Forecast,
-            View::WifiScan => View::I2cScan,
-            View::About => View::WifiScan,
-            View::Warning => View::Now,
+            View::Forecast     => Some(View::Now),
+            View::Hvac         => Some(View::Indoor),
+            View::PressureHvac => Some(View::Hvac),
+            View::WifiScan     => Some(View::I2cScan),
+            View::About        => Some(View::WifiScan),
+            _                  => None,
+        }
+    }
+
+    /// The entry view for this view's group (used by NavMenu jumps).
+    pub fn group_entry(self) -> View {
+        match self {
+            View::Now | View::Forecast                          => View::Now,
+            View::Indoor | View::Hvac | View::PressureHvac     => View::Indoor,
+            View::I2cScan | View::WifiScan | View::About        => View::I2cScan,
+            other                                               => other,
         }
     }
 }
@@ -157,47 +183,69 @@ impl AppState {
 
         match gesture {
             Gesture::None => false,
+
             Gesture::SwipeLeft => {
-                self.current_view = self.current_view.next();
-                self.forecast_hourly_open = false;
+                // Close hourly if open before navigating
+                if self.current_view == View::Forecast && self.forecast_hourly_open {
+                    self.forecast_hourly_open = false;
+                    self.dirty = true;
+                    return true;
+                }
+                // NavMenu: swipe left does nothing (use buttons or swipe right for home)
+                if self.current_view == View::NavMenu {
+                    return false;
+                }
+                // Move to next view within group, or open NavMenu at boundary
+                if let Some(next) = self.current_view.next() {
+                    self.current_view = next;
+                } else {
+                    self.current_view = View::NavMenu;
+                }
                 self.dirty = true;
                 true
             }
+
             Gesture::SwipeRight => {
-                self.current_view = self.current_view.prev();
-                self.forecast_hourly_open = false;
+                // NavMenu: swipe right → home
+                if self.current_view == View::NavMenu {
+                    self.current_view = View::Now;
+                    self.dirty = true;
+                    return true;
+                }
+                // Move to prev view within group, or open NavMenu at boundary
+                if let Some(prev) = self.current_view.prev() {
+                    self.current_view = prev;
+                    self.forecast_hourly_open = false;
+                } else if self.current_view != View::Now {
+                    // At left edge of a non-home group → NavMenu
+                    self.current_view = View::NavMenu;
+                }
+                // SwipeRight on Now does nothing (already home)
                 self.dirty = true;
                 true
             }
+
             Gesture::SwipeUp => {
                 if self.current_view == View::Forecast && self.forecast_hourly_open {
                     self.forecast_hourly_scroll = self.forecast_hourly_scroll.saturating_add(4);
                     self.dirty = true;
                     true
-                } else if self.current_view == View::Warning {
-                    self.warning_scroll = self.warning_scroll.saturating_add(3);
-                    self.dirty = true;
-                    true
                 } else {
                     false
                 }
             }
+
             Gesture::SwipeDown => {
                 if self.current_view == View::Forecast && self.forecast_hourly_open {
                     self.forecast_hourly_scroll = self.forecast_hourly_scroll.saturating_sub(4);
                     self.dirty = true;
                     true
-                } else if self.current_view == View::Warning {
-                    self.warning_scroll = self.warning_scroll.saturating_sub(3);
-                    self.dirty = true;
-                    true
                 } else {
                     false
                 }
             }
-            Gesture::Tap { x, y } => {
-                self.handle_tap(x, y)
-            }
+
+            Gesture::Tap { x, y } => self.handle_tap(x, y),
         }
     }
 
@@ -258,23 +306,49 @@ impl AppState {
         let screen_w = self.screen_w() as i16;
         let screen_h = self.screen_h() as i16;
 
-        // ── Header tap: "Main >" on forecast, or right side of header navigates forward ──
-        if y < 30 {
-            if x >= screen_w - 120 {
-                // Right header tap: navigate to next view (or back to Now from Forecast)
-                if self.current_view == View::Forecast {
-                    self.current_view = View::Now;
-                } else {
-                    self.current_view = self.current_view.next();
-                }
+        // ── NavMenu taps ──
+        if self.current_view == View::NavMenu {
+            if let Some(group_tap) = nav_menu::hit_test(x, y, self.orientation) {
+                self.current_view = match group_tap {
+                    nav_menu::NavTap::Weather => View::Now,
+                    nav_menu::NavTap::Sensors => View::Indoor,
+                    nav_menu::NavTap::System  => View::I2cScan,
+                };
                 self.forecast_hourly_open = false;
                 self.dirty = true;
                 return true;
             }
-            if x < 120 {
-                // Left header tap: navigate to prev view
-                self.current_view = self.current_view.prev();
+            return false;
+        }
+
+        // ── Header tap ──
+        if y < 30 {
+            // Center header tap (any view) → home
+            if x >= 100 && x < screen_w - 100 {
+                self.current_view = View::Now;
                 self.forecast_hourly_open = false;
+                self.dirty = true;
+                return true;
+            }
+            // Right header tap: advance within group (or NavMenu at boundary)
+            if x >= screen_w - 100 {
+                self.forecast_hourly_open = false;
+                if let Some(next) = self.current_view.next() {
+                    self.current_view = next;
+                } else {
+                    self.current_view = View::NavMenu;
+                }
+                self.dirty = true;
+                return true;
+            }
+            // Left header tap: go back within group, or NavMenu at any left boundary
+            if x < 100 {
+                self.forecast_hourly_open = false;
+                if let Some(prev) = self.current_view.prev() {
+                    self.current_view = prev;
+                } else {
+                    self.current_view = View::NavMenu;
+                }
                 self.dirty = true;
                 return true;
             }
@@ -347,14 +421,15 @@ impl AppState {
 /// Draw the current view into the framebuffer.
 pub fn draw_current_view(fb: &mut Framebuffer, state: &AppState) {
     match state.current_view {
-        View::Now => now::draw(fb, state),
-        View::Indoor => indoor::draw(fb, state),
-        View::Hvac => hvac::draw(fb, state),
+        View::Now        => now::draw(fb, state),
+        View::Forecast   => forecast::draw(fb, state),
+        View::Indoor     => indoor::draw(fb, state),
+        View::Hvac       => hvac::draw(fb, state),
         View::PressureHvac => pressure_hvac::draw(fb, state),
-        View::Forecast => forecast::draw(fb, state),
-        View::I2cScan => i2c_scan::draw(fb, state),
-        View::WifiScan => wifi_scan::draw(fb, state),
-        View::About => about::draw(fb, state),
-        View::Warning => warning::draw(fb, state),
+        View::I2cScan    => i2c_scan::draw(fb, state),
+        View::WifiScan   => wifi_scan::draw(fb, state),
+        View::About      => about::draw(fb, state),
+        View::NavMenu    => nav_menu::draw(fb, state),
+        View::Warning    => warning::draw(fb, state),
     }
 }
