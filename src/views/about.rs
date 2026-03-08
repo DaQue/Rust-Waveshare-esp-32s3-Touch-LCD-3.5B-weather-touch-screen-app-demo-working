@@ -3,7 +3,7 @@ use embedded_graphics::{
     prelude::*,
     text::{Alignment, Text},
 };
-use profont::{PROFONT_14_POINT, PROFONT_12_POINT, PROFONT_10_POINT};
+use profont::{PROFONT_14_POINT, PROFONT_10_POINT};
 use crate::framebuffer::Framebuffer;
 use crate::layout::*;
 use crate::views::AppState;
@@ -31,12 +31,12 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
         CARD_FILL_INDOOR, CARD_BORDER_INDOOR, 1,
     );
 
-    let label_style = MonoTextStyle::new(&PROFONT_12_POINT, TEXT_SECONDARY);
-    let value_style = MonoTextStyle::new(&PROFONT_12_POINT, TEXT_TERTIARY);
+    let label_style = MonoTextStyle::new(&PROFONT_14_POINT, TEXT_SECONDARY);
+    let value_style = MonoTextStyle::new(&PROFONT_14_POINT, TEXT_TERTIARY);
     let lx = CARD_MARGIN + 16;
-    let vx = if state.orientation.is_portrait() { 132 } else { 200 };
-    let mut y = card_y + 24;
-    let line_h = 24;
+    let vx = if state.orientation.is_portrait() { 140 } else { 160 };
+    let mut y = card_y + 26;
+    let line_h = 26;
 
     // Device
     Text::new("Device", Point::new(lx, y), label_style).draw(fb).ok();
@@ -64,16 +64,6 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
     Text::new(&wifi_info, Point::new(vx, y), value_style).draw(fb).ok();
     y += line_h;
 
-    // BME280
-    Text::new("BME280", Point::new(lx, y), label_style).draw(fb).ok();
-    let bme_info = if state.indoor_temp.is_some() {
-        "connected".to_string()
-    } else {
-        "not found".to_string()
-    };
-    Text::new(&bme_info, Point::new(vx, y), value_style).draw(fb).ok();
-    y += line_h;
-
     // Free heap
     let heap_kb = unsafe { esp_idf_sys::esp_get_free_heap_size() } / 1024;
     Text::new("Free heap", Point::new(lx, y), label_style).draw(fb).ok();
@@ -97,25 +87,7 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
     Text::new("Uptime", Point::new(lx, y), label_style).draw(fb).ok();
     let uptime_text = format!("{}h {}m", hours, mins);
     Text::new(&uptime_text, Point::new(vx, y), value_style).draw(fb).ok();
-    y += line_h;
-
-    // I2C devices
-    Text::new("I2C devices", Point::new(lx, y), label_style).draw(fb).ok();
-    if state.i2c_devices.is_empty() {
-        Text::new("none", Point::new(vx, y), value_style).draw(fb).ok();
-        y += line_h + 4;
-    } else {
-        let addrs: Vec<String> = state.i2c_devices.iter().map(|a| format!("0x{:02X}", a)).collect();
-        let line1 = addrs[..addrs.len().min(6)].join(" ");
-        Text::new(&line1, Point::new(vx, y), value_style).draw(fb).ok();
-        y += line_h;
-        if addrs.len() > 6 {
-            let line2 = addrs[6..].join(" ");
-            Text::new(&line2, Point::new(vx, y), value_style).draw(fb).ok();
-            y += line_h;
-        }
-        y += 4;
-    }
+    y += line_h + 6;
 
     // Author
     let small_style = MonoTextStyle::new(&PROFONT_10_POINT, TEXT_DETAIL);

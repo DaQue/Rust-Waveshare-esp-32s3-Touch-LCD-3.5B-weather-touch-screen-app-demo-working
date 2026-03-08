@@ -1552,7 +1552,7 @@ dependencies = [
 
 [[package]]
 name = "waveshare_esp32-s3-touch-lcd-3p5b"
-version = "0.2.28"
+version = "0.2.29"
 dependencies = [
  "anyhow",
  "embedded-graphics",
