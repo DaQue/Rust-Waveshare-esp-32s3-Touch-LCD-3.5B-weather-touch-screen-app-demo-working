@@ -908,15 +908,13 @@ fn main() -> Result<()> {
                     }
                     match weather::fetch_weather(&query, &key) {
                         Ok((current, forecast)) => {
-                            if verbose {
-                                info!(
-                                    "Weather: {}°F {} in {} ({} forecast days)",
-                                    current.temp_f as i32,
-                                    current.condition,
-                                    current.city,
-                                    forecast.rows.len()
-                                );
-                            }
+                            info!(
+                                "Weather: {}°F {} in {} ({} forecast days)",
+                                current.temp_f as i32,
+                                current.condition,
+                                current.city,
+                                forecast.rows.len()
+                            );
                             first = false;
                             consecutive_failures = 0;
                             *wd.lock().unwrap() = Some((current, forecast));
@@ -1053,8 +1051,17 @@ fn main() -> Result<()> {
                         Ok(alerts) => {
                             let count = alerts.len();
                             consecutive_failures = 0;
+                            if count == 0 {
+                                info!("NWS alerts: 0 active");
+                            } else {
+                                let names = alerts
+                                    .iter()
+                                    .map(|a| a.event.as_str())
+                                    .collect::<Vec<_>>()
+                                    .join(", ");
+                                info!("NWS alerts: {} active — {}", count, names);
+                            }
                             *ad.lock().unwrap() = Some(alerts);
-                            info!("NWS alerts: {} active", count);
                             std::thread::sleep(Duration::from_secs(ALERTS_INTERVAL_SECS));
                         }
                         Err(e) => {
