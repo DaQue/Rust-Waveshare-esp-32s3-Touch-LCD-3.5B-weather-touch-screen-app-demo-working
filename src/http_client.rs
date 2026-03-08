@@ -98,10 +98,15 @@ fn http_fetch_into(url: &str, headers: &[(&str, &str)], buf: &mut PsramBuf) -> R
     let largest_block = unsafe {
         esp_idf_sys::heap_caps_get_largest_free_block(esp_idf_sys::MALLOC_CAP_INTERNAL)
     };
+    let uptime_secs = unsafe { esp_idf_sys::esp_timer_get_time() } / 1_000_000;
+    let h = uptime_secs / 3600;
+    let m = (uptime_secs % 3600) / 60;
+    let s = uptime_secs % 60;
     info!(
-        "HTTP fetch: internal SRAM free = {} KB, largest block = {} KB",
+        "HTTP fetch: internal SRAM free = {} KB, largest block = {} KB, uptime = {}h {}m {}s",
         free_internal / 1024,
-        largest_block / 1024
+        largest_block / 1024,
+        h, m, s
     );
     // Bail early if the heap is catastrophically fragmented — individual
     // allocations of a few hundred bytes failing means the allocator has
