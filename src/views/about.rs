@@ -101,13 +101,21 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
 
     // I2C devices
     Text::new("I2C devices", Point::new(lx, y), label_style).draw(fb).ok();
-    let i2c_text = if state.i2c_devices.is_empty() {
-        "none".to_string()
+    if state.i2c_devices.is_empty() {
+        Text::new("none", Point::new(vx, y), value_style).draw(fb).ok();
+        y += line_h + 4;
     } else {
-        state.i2c_devices.iter().map(|a| format!("0x{:02X}", a)).collect::<Vec<_>>().join(" ")
-    };
-    Text::new(&i2c_text, Point::new(vx, y), value_style).draw(fb).ok();
-    y += line_h + 4;
+        let addrs: Vec<String> = state.i2c_devices.iter().map(|a| format!("0x{:02X}", a)).collect();
+        let line1 = addrs[..addrs.len().min(6)].join(" ");
+        Text::new(&line1, Point::new(vx, y), value_style).draw(fb).ok();
+        y += line_h;
+        if addrs.len() > 6 {
+            let line2 = addrs[6..].join(" ");
+            Text::new(&line2, Point::new(vx, y), value_style).draw(fb).ok();
+            y += line_h;
+        }
+        y += 4;
+    }
 
     // Author
     let small_style = MonoTextStyle::new(&PROFONT_10_POINT, TEXT_DETAIL);
@@ -116,7 +124,7 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
     // Bottom hint
     let hint_style = MonoTextStyle::new(&PROFONT_10_POINT, TEXT_BOTTOM);
     Text::with_alignment(
-        "(swipe <-/-> or tap header to switch pages)",
+        "(swipe <-/-> to navigate  |  tap header for home)",
         Point::new(screen_w / 2, screen_h - 4),
         hint_style,
         Alignment::Center,
