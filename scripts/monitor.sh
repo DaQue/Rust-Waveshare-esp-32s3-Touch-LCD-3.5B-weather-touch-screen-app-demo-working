@@ -3,7 +3,8 @@
 # Exit: Ctrl+A then X (minicom) or Ctrl+A then k (screen)
 # If the port is busy: killall minicom; killall screen
 
-PORT="${1:-/dev/ttyACM0}"
+BY_ID="/dev/serial/by-id/usb-Espressif_USB_JTAG_serial_debug_unit_80:B5:4E:DA:B6:C8-if00"
+PORT="${1:-$BY_ID}"
 BAUD="${2:-115200}"
 
 if [ ! -e "$PORT" ]; then
