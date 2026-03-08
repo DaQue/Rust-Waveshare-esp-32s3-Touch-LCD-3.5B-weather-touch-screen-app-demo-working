@@ -53,7 +53,7 @@ const PIN_I2S_MCLK: i32 = 44;
 const I2C_FREQ_HZ: u32 = 100_000;
 
 // ── Timing ──────────────────────────────────────────────────────────
-const WEATHER_INTERVAL_SECS: u64 = 600;
+const WEATHER_INTERVAL_SECS: u64 = 60; // TEST: 10x faster — revert to 600 after test
 const WEATHER_RETRY_SECS: u64 = 30;
 const WEATHER_STALE_AFTER_SECS: u64 = WEATHER_INTERVAL_SECS + 120;
 const ALERTS_INTERVAL_SECS: u64 = 180;        // 3 min — scanning for new alerts
@@ -870,12 +870,18 @@ fn main() -> Result<()> {
     }
 
     // ── 12. Weather fetch thread ──
+    // Shared mutex: prevents weather and NWS alert threads from running
+    // simultaneous TLS handshakes, which interleave SRAM allocations and
+    // permanently fragment the heap. Held only for the duration of HTTP calls.
+    let http_lock: Arc<Mutex<()>> = Arc::new(Mutex::new(()));
+
     let weather_data: Arc<Mutex<Option<(weather::CurrentWeather, weather::Forecast)>>> =
         Arc::new(Mutex::new(None));
     {
         let wd = weather_data.clone();
         let refresh = weather_refresh_flag.clone();
         let cfg_weather = cfg.clone();
+        let http_lock_weather = http_lock.clone();
         std::thread::Builder::new()
             .name("weather".into())
             .stack_size(16384) // inner-scope fix in https_get_json drops HTTP vars before parse callback
@@ -907,7 +913,11 @@ fn main() -> Result<()> {
                     if verbose {
                         info!("Weather fetch starting...");
                     }
-                    match weather::fetch_weather(&query, &key) {
+                    let fetch_result = {
+                        let _http = http_lock_weather.lock().unwrap();
+                        weather::fetch_weather(&query, &key)
+                    };
+                    match fetch_result {
                         Ok((current, forecast)) => {
                             info!(
                                 "Weather: {}°F {} in {} ({} forecast days)",
@@ -981,6 +991,7 @@ fn main() -> Result<()> {
         let ad = alert_data.clone();
         let cfg_alerts = cfg.clone();
         let nvs_alerts = nvs.clone();
+        let http_lock_alerts = http_lock.clone();
         std::thread::Builder::new()
             .name("alerts".into())
             .stack_size(32768)
@@ -1009,6 +1020,7 @@ fn main() -> Result<()> {
 
                     let effective_scope = if auto_scope {
                         if cached_zone.is_empty() {
+                            let _http = http_lock_alerts.lock().unwrap();
                             match weather::discover_nws_zone(&ua) {
                                 Ok(zone) => {
                                     info!("NWS auto-scope discovered zone={}", zone);
@@ -1048,7 +1060,11 @@ fn main() -> Result<()> {
                         scope
                     };
 
-                    match weather::fetch_nws_alerts(&effective_scope, &ua) {
+                    let alerts_result = {
+                        let _http = http_lock_alerts.lock().unwrap();
+                        weather::fetch_nws_alerts(&effective_scope, &ua)
+                    };
+                    match alerts_result {
                         Ok(alerts) => {
                             let count = alerts.len();
                             consecutive_failures = 0;
