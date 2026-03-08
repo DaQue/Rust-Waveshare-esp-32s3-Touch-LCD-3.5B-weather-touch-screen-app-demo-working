@@ -1118,9 +1118,7 @@ fn main() -> Result<()> {
 
     std::thread::Builder::new()
         .name("render".into())
-        .stack_size(32768) // heapless::Vec<f32,720> = 2880B on stack; indoor draws two graphs,
-                           // each calling draw_line_graph→data_range with live Vecs simultaneously.
-                           // Peak stack: ~5760B from Vecs + draw/flush call chain > 16KB.
+        .stack_size(16384)
         .spawn(move || {
             let mut current_orientation = layout::Orientation::Landscape;
             loop {

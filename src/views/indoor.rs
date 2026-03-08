@@ -11,9 +11,6 @@ use crate::framebuffer::Framebuffer;
 use crate::layout::*;
 use crate::views::AppState;
 
-// Max history entries — matches the VecDeque cap in AppState.
-const MAX_HISTORY: usize = 720;
-
 // Graph colors
 const GRAPH_TEMP_COLOR: Rgb565 = rgb(255, 140, 60);   // warm orange
 const GRAPH_HUM_COLOR: Rgb565 = rgb(80, 180, 255);    // cool blue
@@ -124,36 +121,26 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
         .ok();
     }
 
-    // Get contiguous slices for graph rendering
-    let temp_slice = state.indoor_temp_history.as_slices();
-    let temp_data: Vec<f32> = temp_slice.0.iter().chain(temp_slice.1.iter()).copied().collect();
-    let hum_slice = state.indoor_hum_history.as_slices();
-    let hum_data: Vec<f32> = hum_slice.0.iter().chain(hum_slice.1.iter()).copied().collect();
+    // Get contiguous slices from VecDeque (zero-copy, zero-alloc)
+    let (temp_s0, temp_s1) = state.indoor_temp_history.as_slices();
+    let (hum_s0, hum_s1) = state.indoor_hum_history.as_slices();
+    let temp_len = state.indoor_temp_history.len();
+    let hum_len = state.indoor_hum_history.len();
 
     // Draw temperature line
-    if temp_data.len() >= 2 {
-        draw_line_graph(
-            fb,
-            &temp_data,
-            graph_x, graph_y, graph_w, graph_h,
-            GRAPH_TEMP_COLOR,
-        );
+    if temp_len >= 2 {
+        draw_line_graph(fb, temp_s0, temp_s1, graph_x, graph_y, graph_w, graph_h, GRAPH_TEMP_COLOR);
     }
 
     // Draw humidity line
-    if hum_data.len() >= 2 {
-        draw_line_graph(
-            fb,
-            &hum_data,
-            graph_x, graph_y, graph_w, graph_h,
-            GRAPH_HUM_COLOR,
-        );
+    if hum_len >= 2 {
+        draw_line_graph(fb, hum_s0, hum_s1, graph_x, graph_y, graph_w, graph_h, GRAPH_HUM_COLOR);
     }
 
     // Y-axis labels (auto-scale based on data)
     let axis_style = MonoTextStyle::new(&PROFONT_14_POINT, TEXT_TERTIARY);
-    if !temp_data.is_empty() {
-        let (min_v, max_v) = data_range(&temp_data);
+    if temp_len > 0 {
+        let (min_v, max_v) = data_range(temp_s0, temp_s1);
         let top_label = format!("{:.0}", max_v);
         let bot_label = format!("{:.0}", min_v);
         Text::with_alignment(&top_label, Point::new(graph_x - 4, graph_y + 10), axis_style, Alignment::Right)
@@ -161,8 +148,8 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
         Text::with_alignment(&bot_label, Point::new(graph_x - 4, graph_y + graph_h - 4), axis_style, Alignment::Right)
             .draw(fb).ok();
     }
-    if !hum_data.is_empty() {
-        let (min_v, max_v) = data_range(&hum_data);
+    if hum_len > 0 {
+        let (min_v, max_v) = data_range(hum_s0, hum_s1);
         let top_label = format!("{:.0}%", max_v);
         let bot_label = format!("{:.0}%", min_v);
         Text::with_alignment(
@@ -184,7 +171,7 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
     }
 
     // X-axis label
-    let samples = state.indoor_temp_history.len().max(state.indoor_hum_history.len());
+    let samples = temp_len.max(hum_len);
     let minutes = (samples as u32 * 5) / 60; // 5s per sample
     let time_label = if minutes > 0 {
         format!("Last {} min", minutes)
@@ -221,71 +208,51 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
     .ok();
 }
 
-/// Get min/max of data with padding, ignoring outliers via IQR filtering.
-fn data_range(data: &[f32]) -> (f32, f32) {
-    let clean: heapless::Vec<f32, MAX_HISTORY> = data
-        .iter()
-        .copied()
-        .filter(|v| v.is_finite())
-        .collect();
-    if clean.is_empty() {
-        return (0.0, 1.0);
-    }
-    let mut sorted = clean;
-    sorted.sort_unstable_by(|a, b| a.total_cmp(b));
-    let n = sorted.len();
-    let q1 = sorted[n / 4];
-    let q3 = sorted[(3 * n) / 4];
-    let iqr = (q3 - q1).max(1.0);
-    let lo = q1 - 1.5 * iqr;
-    let hi = q3 + 1.5 * iqr;
+/// Get min/max of data with 10% padding. Zero allocations — scans both slices directly.
+fn data_range(s0: &[f32], s1: &[f32]) -> (f32, f32) {
     let mut min = f32::INFINITY;
     let mut max = f32::NEG_INFINITY;
-    for &v in &sorted {
-        if v >= lo && v <= hi {
+    for &v in s0.iter().chain(s1.iter()) {
+        if v.is_finite() {
             if v < min { min = v; }
             if v > max { max = v; }
         }
     }
-    if min > max {
-        // All values were outliers — use median
-        min = sorted[n / 2] - 1.0;
-        max = sorted[n / 2] + 1.0;
+    if !min.is_finite() {
+        return (0.0, 1.0);
     }
     let pad = ((max - min) * 0.1).max(1.0);
     (min - pad, max + pad)
 }
 
-/// Draw a line graph of data points within the given rectangle.
+/// Draw a line graph from two VecDeque slices. Zero allocations — iterates directly.
 fn draw_line_graph(
     fb: &mut Framebuffer,
-    data: &[f32],
+    s0: &[f32], s1: &[f32],
     x: i32, y: i32, w: i32, h: i32,
     color: Rgb565,
 ) {
-    let clean: heapless::Vec<f32, MAX_HISTORY> = data
-        .iter()
-        .copied()
-        .filter(|v| v.is_finite())
-        .collect();
-    if clean.len() < 2 {
-        return;
-    }
+    // Count finite values for x-axis scaling
+    let n: usize = s0.iter().chain(s1.iter()).filter(|v| v.is_finite()).count();
+    if n < 2 { return; }
 
-    let (min_v, max_v) = data_range(&clean);
+    let (min_v, max_v) = data_range(s0, s1);
     let range = (max_v - min_v).max(0.01);
     let line_style = PrimitiveStyle::with_stroke(color, 2);
 
-    let n = clean.len();
-    for i in 1..n {
-        let x1 = x + ((i - 1) as i32 * w) / (n - 1) as i32;
-        let x2 = x + (i as i32 * w) / (n - 1) as i32;
-        let y1 = (y + h - ((clean[i - 1] - min_v) / range * h as f32) as i32).clamp(y, y + h);
-        let y2 = (y + h - ((clean[i] - min_v) / range * h as f32) as i32).clamp(y, y + h);
-
-        Line::new(Point::new(x1, y1), Point::new(x2, y2))
-            .into_styled(line_style)
-            .draw(fb)
-            .ok();
+    let mut prev: Option<(i32, i32)> = None;
+    let mut idx: usize = 0;
+    for &v in s0.iter().chain(s1.iter()) {
+        if !v.is_finite() { continue; }
+        let px = x + (idx as i32 * w) / (n - 1) as i32;
+        let py = (y + h - ((v - min_v) / range * h as f32) as i32).clamp(y, y + h);
+        if let Some((px1, py1)) = prev {
+            Line::new(Point::new(px1, py1), Point::new(px, py))
+                .into_styled(line_style)
+                .draw(fb)
+                .ok();
+        }
+        prev = Some((px, py));
+        idx += 1;
     }
 }
