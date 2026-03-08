@@ -35,6 +35,18 @@ CONFIG_MBEDTLS_DYNAMIC_FREE_CONFIG_DATA=y
 # Free CA cert immediately after handshake.  Safe because every request
 # creates a fresh EspHttpConnection — sessions are never reused.
 CONFIG_MBEDTLS_DYNAMIC_FREE_CA_CERT=y
+# Disable hardware AES/SHA/MPI acceleration.
+# The ESP32-S3 hardware crypto engines work via GDMA which can only access
+# internal SRAM — they call heap_caps_malloc(MALLOC_CAP_DMA) directly,
+# bypassing MBEDTLS_EXTERNAL_MEM_ALLOC entirely.  These variable-sized DMA
+# buffers (input/output chunks + descriptor lists) are the real source of
+# internal SRAM fragmentation.  Software mbedTLS uses the PSRAM allocator
+# for all operations — no internal SRAM is touched during TLS handshakes.
+# Performance cost: ~1-3s longer handshake.  Acceptable: requests run no
+# faster than every 30s and the HTTP timeout is 15s.
+CONFIG_MBEDTLS_HARDWARE_AES=n
+CONFIG_MBEDTLS_HARDWARE_SHA=n
+CONFIG_MBEDTLS_HARDWARE_MPI=n
 
 # NTP
 CONFIG_LWIP_SNTP_MAX_SERVERS=2

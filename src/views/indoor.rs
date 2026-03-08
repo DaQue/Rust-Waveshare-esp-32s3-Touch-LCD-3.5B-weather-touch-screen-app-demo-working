@@ -11,6 +11,9 @@ use crate::framebuffer::Framebuffer;
 use crate::layout::*;
 use crate::views::AppState;
 
+// Max history entries — matches the VecDeque cap in AppState.
+const MAX_HISTORY: usize = 720;
+
 // Graph colors
 const GRAPH_TEMP_COLOR: Rgb565 = rgb(255, 140, 60);   // warm orange
 const GRAPH_HUM_COLOR: Rgb565 = rgb(80, 180, 255);    // cool blue
@@ -220,7 +223,11 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
 
 /// Get min/max of data with padding, ignoring outliers via IQR filtering.
 fn data_range(data: &[f32]) -> (f32, f32) {
-    let clean: Vec<f32> = data.iter().copied().filter(|v| v.is_finite()).collect();
+    let clean: heapless::Vec<f32, MAX_HISTORY> = data
+        .iter()
+        .copied()
+        .filter(|v| v.is_finite())
+        .collect();
     if clean.is_empty() {
         return (0.0, 1.0);
     }
@@ -256,7 +263,11 @@ fn draw_line_graph(
     x: i32, y: i32, w: i32, h: i32,
     color: Rgb565,
 ) {
-    let clean: Vec<f32> = data.iter().copied().filter(|v| v.is_finite()).collect();
+    let clean: heapless::Vec<f32, MAX_HISTORY> = data
+        .iter()
+        .copied()
+        .filter(|v| v.is_finite())
+        .collect();
     if clean.len() < 2 {
         return;
     }
