@@ -1070,7 +1070,16 @@ fn main() -> Result<()> {
                             } else {
                                 info!("NWS alerts fetch failed ({} consecutive)", consecutive_failures);
                             }
-                            std::thread::sleep(Duration::from_secs(WEATHER_RETRY_SECS));
+                            // Exponential backoff mirrors the weather thread: slow down
+                            // as failures accumulate to reduce mbedTLS SRAM churn.
+                            let retry_secs = if consecutive_failures >= 30 {
+                                120
+                            } else if consecutive_failures >= 10 {
+                                60
+                            } else {
+                                WEATHER_RETRY_SECS
+                            };
+                            std::thread::sleep(Duration::from_secs(retry_secs));
                         }
                     }
                 }
