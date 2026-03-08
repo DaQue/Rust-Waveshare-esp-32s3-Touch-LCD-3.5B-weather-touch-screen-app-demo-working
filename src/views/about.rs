@@ -81,6 +81,15 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
     Text::new(&heap_text, Point::new(vx, y), value_style).draw(fb).ok();
     y += line_h;
 
+    // SRAM largest contiguous block — real TLS viability indicator
+    let sram_block = unsafe {
+        esp_idf_sys::heap_caps_get_largest_free_block(esp_idf_sys::MALLOC_CAP_INTERNAL as u32)
+    } / 1024;
+    Text::new("SRAM block", Point::new(lx, y), label_style).draw(fb).ok();
+    let sram_text = format!("{} KB", sram_block);
+    Text::new(&sram_text, Point::new(vx, y), value_style).draw(fb).ok();
+    y += line_h;
+
     // Uptime
     let uptime_secs = unsafe { esp_idf_sys::esp_timer_get_time() } / 1_000_000;
     let hours = uptime_secs / 3600;

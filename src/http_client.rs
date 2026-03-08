@@ -51,10 +51,6 @@ impl PsramBuf {
         self.len = 0;
     }
 
-    fn len(&self) -> usize {
-        self.len
-    }
-
     fn extend_from_slice(&mut self, data: &[u8]) -> bool {
         if self.len + data.len() > MAX_RESPONSE_SIZE {
             return false;

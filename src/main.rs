@@ -56,7 +56,8 @@ const I2C_FREQ_HZ: u32 = 100_000;
 const WEATHER_INTERVAL_SECS: u64 = 600;
 const WEATHER_RETRY_SECS: u64 = 30;
 const WEATHER_STALE_AFTER_SECS: u64 = WEATHER_INTERVAL_SECS + 120;
-const ALERTS_INTERVAL_SECS: u64 = 180;
+const ALERTS_INTERVAL_SECS: u64 = 180;        // 3 min — scanning for new alerts
+const ALERTS_ACTIVE_INTERVAL_SECS: u64 = 900;  // 15 min — alert known, no need to hammer
 const ALERTS_START_DELAY_SECS: u64 = 20;
 const ALERT_BEEP_COOLDOWN_SECS: u64 = 600;
 const WARNING_BEEP_INTERVAL_MS: u32 = 20_000;
@@ -1062,7 +1063,8 @@ fn main() -> Result<()> {
                                 info!("NWS alerts: {} active — {}", count, names);
                             }
                             *ad.lock().unwrap() = Some(alerts);
-                            std::thread::sleep(Duration::from_secs(ALERTS_INTERVAL_SECS));
+                            let interval = if count > 0 { ALERTS_ACTIVE_INTERVAL_SECS } else { ALERTS_INTERVAL_SECS };
+                            std::thread::sleep(Duration::from_secs(interval));
                         }
                         Err(e) => {
                             consecutive_failures = consecutive_failures.saturating_add(1);

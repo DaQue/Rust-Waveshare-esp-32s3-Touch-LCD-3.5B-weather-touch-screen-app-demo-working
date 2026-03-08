@@ -73,15 +73,6 @@ impl View {
         }
     }
 
-    /// The entry view for this view's group (used by NavMenu jumps).
-    pub fn group_entry(self) -> View {
-        match self {
-            View::Now | View::Forecast                          => View::Now,
-            View::Indoor | View::Hvac | View::PressureHvac     => View::Indoor,
-            View::I2cScan | View::WifiScan | View::About        => View::I2cScan,
-            other                                               => other,
-        }
-    }
 }
 
 /// Ring buffer for indoor sensor history (temp & humidity).
@@ -222,7 +213,10 @@ impl AppState {
                     // At left edge of a non-home group → NavMenu
                     self.current_view = View::NavMenu;
                 }
-                // SwipeRight on Now does nothing (already home)
+                // SwipeRight on Now → About (quick health/uptime check)
+                if self.current_view == View::Now {
+                    self.current_view = View::About;
+                }
                 self.dirty = true;
                 true
             }

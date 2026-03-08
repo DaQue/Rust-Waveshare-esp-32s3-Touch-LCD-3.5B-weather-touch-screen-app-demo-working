@@ -312,6 +312,8 @@ pub fn parse_current_weather(json: &str) -> Result<CurrentWeather> {
 
 pub fn parse_forecast(json: &str) -> Result<Forecast> {
     let root: OwmForecastRoot = serde_json::from_str(json)?;
+    // serde_json on 32KB JSON is CPU-intensive; yield before the loop so IDLE1 feeds WDT.
+    unsafe { esp_idf_sys::vTaskDelay(1) };
     let list = root.list.unwrap_or_default();
     let tz_offset = root.city.and_then(|c| c.timezone).unwrap_or(0);
 
@@ -331,7 +333,11 @@ pub fn parse_forecast(json: &str) -> Result<Forecast> {
     let mut days: Vec<DaySummary> = Vec::new();
     let mut first_hour: Option<i32> = None;
 
-    for entry in &list {
+    for (i, entry) in list.iter().enumerate() {
+        // Yield every 8 entries to let IDLE1 feed the task watchdog.
+        if i % 8 == 0 {
+            unsafe { esp_idf_sys::vTaskDelay(1) };
+        }
         let dt = match entry.dt {
             Some(dt) => dt,
             None => continue,

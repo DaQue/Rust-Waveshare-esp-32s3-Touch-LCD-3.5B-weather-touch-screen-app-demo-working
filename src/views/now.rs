@@ -33,7 +33,10 @@ fn draw_temp_trend(fb: &mut Framebuffer, trend: i8, cx: i32, cy: i32) {
             rgb(100, 160, 255), // blue — falling
             [Point::new(cx, cy + 9), Point::new(cx - 8, cy - 7), Point::new(cx + 8, cy - 7)],
         ),
-        _ => return,
+        _ => (
+            rgb(140, 140, 140), // gray — steady; right-pointing
+            [Point::new(cx + 9, cy), Point::new(cx - 7, cy - 7), Point::new(cx - 7, cy + 7)],
+        ),
     };
     Triangle::new(pts[0], pts[1], pts[2])
         .into_styled(PrimitiveStyle::with_fill(color))
@@ -130,9 +133,9 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
 
         Text::new(&temp_text, Point::new(120, card_top + 46), temp_style).draw(fb).ok();
         let trend = outdoor_temp_trend(&state.outdoor_temp_history);
-        if trend != 0 {
-            draw_temp_trend(fb, trend, 290, card_top + 36);
-        }
+        // PROFONT_24_POINT char width ≈ 14px; +17 = half-char gap after text; cy +42 clears top of °F
+        let triangle_x = 120 + temp_text.chars().count() as i32 * 14 + 17;
+        draw_temp_trend(fb, trend, triangle_x, card_top + 42);
         Text::new(&feels_text, Point::new(120, card_top + 72), feels_style).draw(fb).ok();
         Text::new(&cw.condition, Point::new(120, card_top + 94), cond_style).draw(fb).ok();
 
