@@ -1133,10 +1133,14 @@ fn main() -> Result<()> {
                     }
                     current_orientation = snapshot.orientation;
                 }
+                // Yield before draw so IDLE1 runs at frame start.
+                // draw_current_view can be long (BMP iteration, PSRAM writes)
+                // and the post-flush yield alone is too late if draw takes
+                // longer than the WDT timeout under PSRAM bus contention.
+                unsafe { esp_idf_sys::vTaskDelay(1) };
                 views::draw_current_view(&mut fb, &snapshot);
                 ctx.flush_fb(&fb, snapshot.orientation);
-                // Yield to IDLE1 after each frame so the Task Watchdog is fed.
-                // vTaskDelay(0) is a no-op in FreeRTOS; minimum is 1 tick.
+                // Yield after flush as well (belt-and-suspenders).
                 unsafe { esp_idf_sys::vTaskDelay(1) };
             }
         })
