@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Build, flash, and monitor the ESP32-S3 — logs to log.txt alongside terminal.
-# Usage: esprun.sh [--no-sudo]
+# Usage: esprun.sh [--sudo]   (sudo only needed if not in the dialout group)
 # Exit monitor: Ctrl+A then X
 
 set -euo pipefail
@@ -13,9 +13,9 @@ USER_HOME="$HOME"
 USER_CARGO_HOME="${CARGO_HOME:-$USER_HOME/.cargo}"
 USER_RUSTUP_HOME="${RUSTUP_HOME:-$USER_HOME/.rustup}"
 
-use_sudo=1
-if [[ "${1-}" == "--no-sudo" ]]; then
-  use_sudo=0
+use_sudo=0
+if [[ "${1-}" == "--sudo" ]]; then
+  use_sudo=1
 fi
 
 if [[ ! -f "$ESP_ENV" ]]; then
