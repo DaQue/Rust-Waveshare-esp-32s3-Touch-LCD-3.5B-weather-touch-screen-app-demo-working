@@ -1274,10 +1274,12 @@ fn main() -> Result<()> {
         // Check for weather data from background thread
         if let Ok(mut wd) = weather_data.try_lock() {
             if let Some((current, forecast)) = wd.take() {
-                state.bottom_text = format!(
-                    "{}, {} | {}",
-                    current.city, current.country, current.condition
-                );
+                state.bottom_text.clear();
+                state.bottom_text.push_str(&current.city);
+                state.bottom_text.push_str(", ");
+                state.bottom_text.push_str(&current.country);
+                state.bottom_text.push_str(" | ");
+                state.bottom_text.push_str(&current.condition);
                 let temp_f = current.temp_f;
                 state.current_weather = Some(current);
                 state.forecast = Some(forecast);
@@ -1286,7 +1288,8 @@ fn main() -> Result<()> {
                 if state.outdoor_temp_history.len() > 12 {
                     state.outdoor_temp_history.pop_front();
                 }
-                state.status_text = ip_address.clone();
+                state.status_text.clear();
+                state.status_text.push_str(&ip_address);
                 state.weather_stale = false;
                 last_weather_success_ms = Some(t);
                 state.dirty = true;
@@ -1575,7 +1578,8 @@ fn main() -> Result<()> {
         if state.force_weather_refresh {
             state.force_weather_refresh = false;
             weather_refresh_flag.store(true, Ordering::Relaxed);
-            state.status_text = "Refreshing...".to_string();
+            state.status_text.clear();
+            state.status_text.push_str("Refreshing...");
             state.dirty = true;
         }
 
@@ -1591,8 +1595,10 @@ fn main() -> Result<()> {
                     Ok(Some(ip)) => {
                         wifi_ok = true;
                         ip_address = ip;
-                        state.ip_address = ip_address.clone();
-                        state.status_text = ip_address.clone();
+                        state.ip_address.clear();
+                        state.ip_address.push_str(&ip_address);
+                        state.status_text.clear();
+                        state.status_text.push_str(&ip_address);
                         if sntp.is_none() {
                             match time_sync::sync_time(&timezone) {
                                 Ok(new_sntp) => sntp = Some(new_sntp),
@@ -1636,7 +1642,8 @@ fn main() -> Result<()> {
         if tick_count.is_multiple_of(TIME_UPDATE_TICKS) {
             if let Some(t) = time_sync::format_local_time() {
                 if t != state.time_text {
-                    state.time_text = t;
+                    state.time_text.clear();
+                    state.time_text.push_str(&t);
                     state.dirty = true;
                 }
             }
