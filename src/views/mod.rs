@@ -75,8 +75,9 @@ impl View {
 
 }
 
-/// Ring buffer for indoor sensor history (temp & humidity).
-pub const INDOOR_HISTORY_MAX: usize = 720; // 720 samples @ 5s = 1 hour
+/// Ring buffer sizes for indoor sensor history (temp & humidity).
+pub const INDOOR_SHORT_MAX: usize = 480;  // 2 h at 15 s intervals (every 3rd BME read)
+pub const INDOOR_LONG_MAX:  usize = 480;  // 24 h at 3 min intervals (every 36th BME read)
 
 /// Central app state shared across views.
 #[derive(Clone)]
@@ -89,6 +90,9 @@ pub struct AppState {
     pub indoor_pressure: Option<f32>,
     pub indoor_temp_history: VecDeque<f32>,
     pub indoor_hum_history: VecDeque<f32>,
+    pub indoor_temp_hist_long: VecDeque<f32>,
+    pub indoor_hum_hist_long: VecDeque<f32>,
+    pub plot_range_short: bool,      // true = 2h view, false = 24h view (Indoor + PressureHvac)
     pub outdoor_temp_history: VecDeque<f32>,
     pub time_text: String,
     pub status_text: String,
@@ -129,6 +133,9 @@ impl AppState {
             indoor_pressure: None,
             indoor_temp_history: VecDeque::new(),
             indoor_hum_history: VecDeque::new(),
+            indoor_temp_hist_long: VecDeque::new(),
+            indoor_hum_hist_long: VecDeque::new(),
+            plot_range_short: true,
             outdoor_temp_history: VecDeque::new(),
             time_text: String::new(),
             status_text: "Starting...".to_string(),
@@ -384,6 +391,26 @@ impl AppState {
             };
             if y >= forecast_tap_top && y < screen_h {
                 self.current_view = View::Forecast;
+                self.dirty = true;
+                return true;
+            }
+        }
+
+        // ── Indoor view taps — tap graph area toggles 2h ↔ 24h ──
+        if self.current_view == View::Indoor {
+            let graph_y: i16 = if self.orientation.is_portrait() { 168 } else { 88 };
+            if y >= graph_y {
+                self.plot_range_short = !self.plot_range_short;
+                self.dirty = true;
+                return true;
+            }
+        }
+
+        // ── PressureHvac view taps — tap graph area toggles 2h ↔ 24h ──
+        if self.current_view == View::PressureHvac {
+            let graph_top: i16 = if self.orientation.is_landscape() { 64 } else { 84 };
+            if y >= graph_top {
+                self.plot_range_short = !self.plot_range_short;
                 self.dirty = true;
                 return true;
             }

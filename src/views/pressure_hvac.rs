@@ -37,7 +37,13 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
     let label_style = MonoTextStyle::new(&PROFONT_14_POINT, TEXT_TERTIARY);
 
     // ── Header ──────────────────────────────────────────────────────
-    Text::new("Pressure + HVAC (24h)", Point::new(14, 24), header_style)
+    let range_label = if state.plot_range_short { "2h" } else { "24h" };
+    let header_text = if landscape {
+        format!("Pressure + HVAC ({}) — tap graph to toggle", range_label)
+    } else {
+        format!("Pressure + HVAC ({})", range_label)
+    };
+    Text::new(&header_text, Point::new(14, 24), header_style)
         .draw(fb)
         .ok();
 
@@ -130,11 +136,17 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
     }
 
     let phist = &state.pressure_history;
-    let total_samples = phist.len();
+    let (bme_pts_raw, owm_pts, bme_mm, owm_mm, total_samples) = if state.plot_range_short {
+        (phist.short_bme_series(), phist.short_owm_series(),
+         phist.short_bme_min_max(), phist.short_owm_min_max(),
+         phist.short_len())
+    } else {
+        (phist.long_bme_series(), phist.long_owm_series(),
+         phist.long_bme_min_max(), phist.long_owm_min_max(),
+         phist.long_len())
+    };
 
     if total_samples >= 2 {
-        let bme_pts_raw = phist.bme_series();
-        let owm_pts = phist.owm_series();
 
         // Normalize BME to sea-level by adding the OWM-BME offset so both lines
         // share the same Y baseline. Falls back to raw values until offset is known.
@@ -221,7 +233,8 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
 
     // X-axis labels
     let x_label_y = graph_top + graph_h + 14;
-    Text::new("-24h", Point::new(graph_x, x_label_y), label_style)
+    let x_label = if state.plot_range_short { "-2h" } else { "-24h" };
+    Text::new(x_label, Point::new(graph_x, x_label_y), label_style)
         .draw(fb)
         .ok();
     Text::with_alignment(
@@ -235,7 +248,7 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
 
     // Min/max labels (compact, between graph and HVAC box)
     let minmax_y = x_label_y + 2;
-    if let Some((blo, bhi)) = phist.bme_min_max() {
+    if let Some((blo, bhi)) = bme_mm {
         let (blo, bhi) = if let Some(off) = bme_offset {
             (blo + off, bhi + off)
         } else {
@@ -252,7 +265,7 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
         .draw(fb)
         .ok();
     }
-    if let Some((olo, ohi)) = phist.owm_min_max() {
+    if let Some((olo, ohi)) = owm_mm {
         let txt = format!("OWM {:.0}-{:.0}", olo, ohi);
         let s = MonoTextStyle::new(&PROFONT_14_POINT, COLOR_OWM);
         Text::with_alignment(

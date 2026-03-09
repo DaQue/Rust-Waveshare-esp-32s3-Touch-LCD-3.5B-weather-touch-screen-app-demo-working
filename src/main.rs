@@ -26,8 +26,20 @@ use esp_idf_svc::eventloop::EspSystemEventLoop;
 use esp_idf_svc::nvs::{EspDefaultNvsPartition, EspNvs};
 use log::info;
 use std::sync::{Arc, Mutex};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::time::Duration;
+
+// ── SRAM watch atomics (shared with http_client.rs) ─────────────────
+/// Set by http_fetch_into when SRAM largest block drops below 12 KB for the
+/// first time; cleared by the main loop which then resets the BME280 driver
+/// to free any leaked I2C state.
+pub static SRAM_BME_RESET: AtomicBool = AtomicBool::new(false);
+/// Counts consecutive HTTP fetches where the largest SRAM block was < 12 KB.
+/// Resets to 0 whenever a fetch completes with sufficient headroom.
+pub static SRAM_LOW_STREAK: AtomicU32  = AtomicU32::new(0);
+/// Set by http_fetch_into after 3 consecutive low-SRAM fetches; the main loop
+/// saves history to NVS then calls esp_restart().
+pub static SRAM_DO_REBOOT:  AtomicBool = AtomicBool::new(false);
 
 // ── Display geometry (physical panel is 320x480 portrait) ───────────
 const PANEL_WIDTH: i32 = 320;
@@ -65,7 +77,7 @@ const WATCH_BEEP_INTERVAL_MS: u32 = 10_000;
 const BME280_INTERVAL_MS: u32 = 5_000;
 const HVAC_DETECT_INTERVAL_MS: u32 = 5_000;
 const HVAC_RECORD_INTERVAL_MS: u32 = 30_000;
-const PRESSURE_SAMPLE_INTERVAL_MS: u32 = pressure_history::SAMPLE_PERIOD_SECS * 1000;
+const PRESSURE_SAMPLE_INTERVAL_MS: u32 = pressure_history::LONG_PERIOD_SECS * 1000;
 const BME_TEMP_MIN_F: f32 = -40.0;
 const BME_TEMP_MAX_F: f32 = 185.0;
 const BME_PRESSURE_MIN_HPA: f32 = 300.0;
@@ -593,6 +605,121 @@ fn draw_splash(fb: &mut framebuffer::Framebuffer, status: &str) {
     .ok();
 }
 
+// ── NVS history persistence ──────────────────────────────────────────
+
+/// Serialise all sensor history VecDeques and pressure rings to NVS blobs.
+/// Called just before a proactive SRAM-triggered reboot so the data survives.
+fn history_nvs_save(state: &views::AppState, nvs: &Arc<Mutex<EspNvs<esp_idf_svc::nvs::NvsDefault>>>) {
+    use std::collections::VecDeque;
+
+    const F: usize = core::mem::size_of::<f32>();
+    const N: usize = 480;
+    // 4 arrays × (8 bytes length + N × 4 bytes f32) = 4 × (8 + N*4)
+    let total = 4 * (8 + N * F);
+    let mut buf = vec![0u8; total];
+    let mut off = 0usize;
+
+    fn write_deque(buf: &mut [u8], off: &mut usize, dq: &VecDeque<f32>, max: usize) {
+        let len = dq.len().min(max);
+        buf[*off..*off + 8].copy_from_slice(&(len as u64).to_le_bytes());
+        *off += 8;
+        let (s0, s1) = dq.as_slices();
+        for &v in s0.iter().chain(s1.iter()).take(len) {
+            buf[*off..*off + 4].copy_from_slice(&v.to_le_bytes());
+            *off += 4;
+        }
+        // Pad remaining slots so offsets are fixed regardless of fill level
+        let written = len;
+        for _ in written..max {
+            buf[*off..*off + 4].copy_from_slice(&0f32.to_le_bytes());
+            *off += 4;
+        }
+    }
+
+    write_deque(&mut buf, &mut off, &state.indoor_temp_history,    N);
+    write_deque(&mut buf, &mut off, &state.indoor_hum_history,     N);
+    write_deque(&mut buf, &mut off, &state.indoor_temp_hist_long,  N);
+    write_deque(&mut buf, &mut off, &state.indoor_hum_hist_long,   N);
+
+    if let Ok(mut nvs_guard) = nvs.lock() {
+        if let Err(e) = nvs_guard.set_raw(config::KEY_HIST_INDOOR, &buf) {
+            log::warn!("NVS hist_indoor save failed: {:?}", e);
+        }
+    }
+
+    let press_buf = state.pressure_history.to_bytes();
+    if let Ok(mut nvs_guard) = nvs.lock() {
+        if let Err(e) = nvs_guard.set_raw(config::KEY_HIST_PRESS, &press_buf) {
+            log::warn!("NVS hist_press save failed: {:?}", e);
+        }
+    }
+
+    log::info!("History NVS save complete ({} + {} bytes)", buf.len(), press_buf.len());
+}
+
+/// Restore sensor history from NVS blobs saved by a previous proactive reboot.
+fn history_nvs_restore(state: &mut views::AppState, nvs: &Arc<Mutex<EspNvs<esp_idf_svc::nvs::NvsDefault>>>) {
+    use std::collections::VecDeque;
+
+    const F: usize = core::mem::size_of::<f32>();
+    const N: usize = 480;
+    let total = 4 * (8 + N * F);
+    let mut buf = vec![0u8; total];
+
+    let loaded = if let Ok(nvs_guard) = nvs.lock() {
+        match nvs_guard.get_raw(config::KEY_HIST_INDOOR, &mut buf) {
+            Ok(Some(_)) => true,
+            _ => false,
+        }
+    } else {
+        false
+    };
+
+    if !loaded {
+        log::info!("No saved indoor history found in NVS");
+        return;
+    }
+
+    fn read_deque(buf: &[u8], off: &mut usize, dq: &mut VecDeque<f32>, max: usize) {
+        let len = (u64::from_le_bytes(buf[*off..*off + 8].try_into().unwrap()) as usize).min(max);
+        *off += 8;
+        for _ in 0..len {
+            let v = f32::from_le_bytes(buf[*off..*off + 4].try_into().unwrap());
+            *off += 4;
+            dq.push_back(v);
+        }
+        // Skip padding for remaining slots
+        *off += (max - len) * 4;
+    }
+
+    let mut off = 0usize;
+    read_deque(&buf, &mut off, &mut state.indoor_temp_history,    N);
+    read_deque(&buf, &mut off, &mut state.indoor_hum_history,     N);
+    read_deque(&buf, &mut off, &mut state.indoor_temp_hist_long,  N);
+    read_deque(&buf, &mut off, &mut state.indoor_hum_hist_long,   N);
+    log::info!(
+        "Restored indoor history: {} short, {} long temp samples",
+        state.indoor_temp_history.len(),
+        state.indoor_temp_hist_long.len()
+    );
+
+    // Restore pressure history
+    let press_total = pressure_history::PressureHistory::serialised_size();
+    let mut pbuf = vec![0u8; press_total];
+    let press_loaded = if let Ok(nvs_guard) = nvs.lock() {
+        match nvs_guard.get_raw(config::KEY_HIST_PRESS, &mut pbuf) {
+            Ok(Some(_)) => true,
+            _ => false,
+        }
+    } else {
+        false
+    };
+    if press_loaded {
+        state.pressure_history.from_bytes(&pbuf);
+        log::info!("Restored pressure history from NVS");
+    }
+}
+
 // ── Entry point ─────────────────────────────────────────────────────
 
 fn main() -> Result<()> {
@@ -845,6 +972,9 @@ fn main() -> Result<()> {
     } else {
         locked_orientation(state.orientation_mode, state.orientation_flip)
     };
+    // Restore sensor history from NVS (populated by proactive reboot path)
+    history_nvs_restore(&mut state, &nvs);
+
     state.i2c_devices = i2c_devices;
     state.wifi_ssid = wifi_ssid.clone();
     state.ip_address = ip_address.clone();
@@ -1117,6 +1247,7 @@ fn main() -> Result<()> {
     let mut last_bme_ms: u32 = 0;
     let mut last_bme_init_ms: u32 = 0;
     let mut bme_reject_streak: u16 = 0;
+    let mut bme_sample_tick: u32 = 0u32;
     let mut last_hvac_detect_ms: u32 = 0;
     let mut last_hvac_record_ms: u32 = 0;
     let mut last_pressure_sample_ms: u32 = 0;
@@ -1188,6 +1319,13 @@ fn main() -> Result<()> {
             }
 
         // BME280 read (or retry init if not yet found)
+        // BME reset requested by SRAM watch in http_fetch_into
+        if SRAM_BME_RESET.swap(false, Ordering::Relaxed) {
+            log::warn!("BME280 reset due to low SRAM — will re-init on next interval");
+            bme280 = None;
+            bme_reject_streak = 0;
+        }
+
         if t.wrapping_sub(last_bme_ms) >= BME280_INTERVAL_MS {
             last_bme_ms = t;
             if bme280.is_none() && t.wrapping_sub(last_bme_init_ms) >= 30_000 {
@@ -1225,6 +1363,7 @@ fn main() -> Result<()> {
                             );
                         }
                         bme_reject_streak = 0;
+                        bme_sample_tick = bme_sample_tick.wrapping_add(1);
                         if debug_flags::is_on(&debug_flags::DEBUG_BME280) {
                             info!(
                                 "BME280: {:.1}°F  {:.1}%RH  {:.0}hPa",
@@ -1234,15 +1373,37 @@ fn main() -> Result<()> {
                         state.indoor_temp = Some(reading.temperature_f);
                         state.indoor_humidity = Some(reading.humidity);
                         state.indoor_pressure = Some(reading.pressure_hpa);
-                        // Push to history ring buffer (VecDeque: O(1) pop_front)
-                        if state.indoor_temp_history.len() >= views::INDOOR_HISTORY_MAX {
-                            state.indoor_temp_history.pop_front();
+
+                        // Short buffer: every 3rd accepted read = ~15 s
+                        if bme_sample_tick % 3 == 0 {
+                            if state.indoor_temp_history.len() >= views::INDOOR_SHORT_MAX {
+                                state.indoor_temp_history.pop_front();
+                            }
+                            state.indoor_temp_history.push_back(reading.temperature_f);
+                            if state.indoor_hum_history.len() >= views::INDOOR_SHORT_MAX {
+                                state.indoor_hum_history.pop_front();
+                            }
+                            state.indoor_hum_history.push_back(reading.humidity);
+
+                            // Short pressure push (same 15 s cadence)
+                            let bme_hpa = state.indoor_pressure;
+                            let owm_hpa = state.current_weather.as_ref()
+                                .and_then(|cw| if cw.pressure_hpa > 0 { Some(cw.pressure_hpa as f32) } else { None });
+                            state.pressure_history.push_short(bme_hpa, owm_hpa);
                         }
-                        state.indoor_temp_history.push_back(reading.temperature_f);
-                        if state.indoor_hum_history.len() >= views::INDOOR_HISTORY_MAX {
-                            state.indoor_hum_history.pop_front();
+
+                        // Long buffer: every 36th accepted read = ~3 min
+                        if bme_sample_tick % 36 == 0 {
+                            if state.indoor_temp_hist_long.len() >= views::INDOOR_LONG_MAX {
+                                state.indoor_temp_hist_long.pop_front();
+                            }
+                            state.indoor_temp_hist_long.push_back(reading.temperature_f);
+                            if state.indoor_hum_hist_long.len() >= views::INDOOR_LONG_MAX {
+                                state.indoor_hum_hist_long.pop_front();
+                            }
+                            state.indoor_hum_hist_long.push_back(reading.humidity);
                         }
-                        state.indoor_hum_history.push_back(reading.humidity);
+
                         state.dirty = true;
                     } // end accept block
                   }
@@ -1251,6 +1412,12 @@ fn main() -> Result<()> {
                   }
                 }
             }
+        }
+
+        // DIAGNOSTIC: SRAM_DO_REBOOT path disabled — log only so crash is capturable
+        if SRAM_DO_REBOOT.load(Ordering::Relaxed) {
+            log::error!("SRAM_DO_REBOOT flag set (diagnostic mode — no reboot)");
+            SRAM_DO_REBOOT.store(false, Ordering::Relaxed);
         }
 
         // HVAC fast detection (every 5s)
@@ -1282,7 +1449,7 @@ fn main() -> Result<()> {
                         None
                     }
                 });
-            state.pressure_history.push(bme, owm);
+            state.pressure_history.push_long(bme, owm);
             last_pressure_sample_ms = t;
             state.dirty = true;
         }

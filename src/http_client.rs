@@ -2,6 +2,7 @@ use anyhow::{bail, Result};
 use esp_idf_svc::http::client::{Configuration, EspHttpConnection};
 use log::info;
 use std::sync::{Mutex, OnceLock};
+use std::sync::atomic::Ordering;
 
 const TIMEOUT_MS: u64 = 15_000;
 const MAX_RESPONSE_SIZE: usize = 32_768;
@@ -108,10 +109,31 @@ fn http_fetch_into(url: &str, headers: &[(&str, &str)], buf: &mut PsramBuf) -> R
         largest_block / 1024,
         h, m, s
     );
-    // Bail early if the heap is catastrophically fragmented — individual
-    // allocations of a few hundred bytes failing means the allocator has
-    // almost nothing left contiguous.  40 KB was wrong (WiFi leaves the
-    // largest block at ~31 KB normally); 4 KB catches only true exhaustion.
+    // SRAM watch: track consecutive fetches below 12 KB largest block.
+    // At that level TLS is already impossible; proactively signal the main
+    // loop rather than letting the allocator crash mid-handshake.
+    if largest_block < 12_000 {
+        let streak = crate::SRAM_LOW_STREAK.fetch_add(1, Ordering::Relaxed) + 1;
+        if streak == 1 {
+            log::warn!(
+                "SRAM < 12 KB ({} KB) — signalling BME280 reset (fetch streak {})",
+                largest_block / 1024, streak
+            );
+            crate::SRAM_BME_RESET.store(true, Ordering::Relaxed);
+        }
+        if streak >= 3 {
+            log::error!(
+                "SRAM critically low for {} consecutive fetches (streak {})",
+                largest_block / 1024, streak
+            );
+            // DIAGNOSTIC: reboot path disabled — log only, let it crash naturally
+            // so we can capture the backtrace.
+        }
+    } else {
+        crate::SRAM_LOW_STREAK.store(0, Ordering::Relaxed);
+    }
+
+    // Hard bail if essentially nothing is left contiguous.
     if largest_block < 4_000 {
         bail!(
             "SRAM too fragmented for TLS ({} KB largest block)",

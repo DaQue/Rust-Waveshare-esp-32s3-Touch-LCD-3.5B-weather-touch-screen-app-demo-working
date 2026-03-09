@@ -121,71 +121,99 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
         .ok();
     }
 
-    // Get contiguous slices from VecDeque (zero-copy, zero-alloc)
-    let (temp_s0, temp_s1) = state.indoor_temp_history.as_slices();
-    let (hum_s0, hum_s1) = state.indoor_hum_history.as_slices();
-    let temp_len = state.indoor_temp_history.len();
-    let hum_len = state.indoor_hum_history.len();
-
-    // Draw temperature line
-    if temp_len >= 2 {
-        draw_line_graph(fb, temp_s0, temp_s1, graph_x, graph_y, graph_w, graph_h, GRAPH_TEMP_COLOR);
-    }
-
-    // Draw humidity line
-    if hum_len >= 2 {
-        draw_line_graph(fb, hum_s0, hum_s1, graph_x, graph_y, graph_w, graph_h, GRAPH_HUM_COLOR);
-    }
-
-    // Y-axis labels (auto-scale based on data)
+    // Select short (2h) or long (24h) dataset based on toggle flag
     let axis_style = MonoTextStyle::new(&PROFONT_14_POINT, TEXT_TERTIARY);
-    if temp_len > 0 {
-        let (min_v, max_v) = data_range(temp_s0, temp_s1);
-        let top_label = format!("{:.0}", max_v);
-        let bot_label = format!("{:.0}", min_v);
-        Text::with_alignment(&top_label, Point::new(graph_x - 4, graph_y + 10), axis_style, Alignment::Right)
-            .draw(fb).ok();
-        Text::with_alignment(&bot_label, Point::new(graph_x - 4, graph_y + graph_h - 4), axis_style, Alignment::Right)
-            .draw(fb).ok();
-    }
-    if hum_len > 0 {
-        let (min_v, max_v) = data_range(hum_s0, hum_s1);
-        let top_label = format!("{:.0}%", max_v);
-        let bot_label = format!("{:.0}%", min_v);
+    if state.plot_range_short {
+        let (temp_s0, temp_s1) = state.indoor_temp_history.as_slices();
+        let (hum_s0, hum_s1) = state.indoor_hum_history.as_slices();
+        let temp_len = state.indoor_temp_history.len();
+        let hum_len = state.indoor_hum_history.len();
+
+        if temp_len >= 2 {
+            draw_line_graph(fb, temp_s0, temp_s1, graph_x, graph_y, graph_w, graph_h, GRAPH_TEMP_COLOR);
+        }
+        if hum_len >= 2 {
+            draw_line_graph(fb, hum_s0, hum_s1, graph_x, graph_y, graph_w, graph_h, GRAPH_HUM_COLOR);
+        }
+        if temp_len > 0 {
+            let (min_v, max_v) = data_range(temp_s0, temp_s1);
+            let top_label = format!("{:.0}", max_v);
+            let bot_label = format!("{:.0}", min_v);
+            Text::with_alignment(&top_label, Point::new(graph_x - 4, graph_y + 10), axis_style, Alignment::Right).draw(fb).ok();
+            Text::with_alignment(&bot_label, Point::new(graph_x - 4, graph_y + graph_h - 4), axis_style, Alignment::Right).draw(fb).ok();
+        }
+        if hum_len > 0 {
+            let (min_v, max_v) = data_range(hum_s0, hum_s1);
+            let top_label = format!("{:.0}%", max_v);
+            let bot_label = format!("{:.0}%", min_v);
+            Text::with_alignment(&top_label, Point::new(graph_x + graph_w - 4, graph_y + 10), axis_style, Alignment::Right).draw(fb).ok();
+            Text::with_alignment(&bot_label, Point::new(graph_x + graph_w - 4, graph_y + graph_h - 4), axis_style, Alignment::Right).draw(fb).ok();
+        }
+
+        let x_label = "-2h";
+        Text::new(x_label, Point::new(graph_x, graph_y + graph_h + 14), axis_style).draw(fb).ok();
+        let samples = temp_len.max(hum_len);
+        let time_label = if samples > 0 {
+            format!("~{}m", (samples as u32 * 15) / 60)
+        } else {
+            "Collecting...".to_string()
+        };
         Text::with_alignment(
-            &top_label,
-            Point::new(graph_x + graph_w - 4, graph_y + 10),
+            &time_label,
+            Point::new(graph_x + graph_w / 2, graph_y + graph_h + 18),
             axis_style,
-            Alignment::Right,
-        )
-        .draw(fb)
-        .ok();
+            Alignment::Center,
+        ).draw(fb).ok();
+    } else {
+        let (temp_s0, temp_s1) = state.indoor_temp_hist_long.as_slices();
+        let (hum_s0, hum_s1) = state.indoor_hum_hist_long.as_slices();
+        let temp_len = state.indoor_temp_hist_long.len();
+        let hum_len = state.indoor_hum_hist_long.len();
+
+        if temp_len >= 2 {
+            draw_line_graph(fb, temp_s0, temp_s1, graph_x, graph_y, graph_w, graph_h, GRAPH_TEMP_COLOR);
+        }
+        if hum_len >= 2 {
+            draw_line_graph(fb, hum_s0, hum_s1, graph_x, graph_y, graph_w, graph_h, GRAPH_HUM_COLOR);
+        }
+        if temp_len > 0 {
+            let (min_v, max_v) = data_range(temp_s0, temp_s1);
+            let top_label = format!("{:.0}", max_v);
+            let bot_label = format!("{:.0}", min_v);
+            Text::with_alignment(&top_label, Point::new(graph_x - 4, graph_y + 10), axis_style, Alignment::Right).draw(fb).ok();
+            Text::with_alignment(&bot_label, Point::new(graph_x - 4, graph_y + graph_h - 4), axis_style, Alignment::Right).draw(fb).ok();
+        }
+        if hum_len > 0 {
+            let (min_v, max_v) = data_range(hum_s0, hum_s1);
+            let top_label = format!("{:.0}%", max_v);
+            let bot_label = format!("{:.0}%", min_v);
+            Text::with_alignment(&top_label, Point::new(graph_x + graph_w - 4, graph_y + 10), axis_style, Alignment::Right).draw(fb).ok();
+            Text::with_alignment(&bot_label, Point::new(graph_x + graph_w - 4, graph_y + graph_h - 4), axis_style, Alignment::Right).draw(fb).ok();
+        }
+
+        let x_label = "-24h";
+        Text::new(x_label, Point::new(graph_x, graph_y + graph_h + 14), axis_style).draw(fb).ok();
+        let samples = temp_len.max(hum_len);
+        let time_label = if samples > 0 {
+            format!("~{}h", (samples as u32 * 3) / 60)
+        } else {
+            "Collecting...".to_string()
+        };
         Text::with_alignment(
-            &bot_label,
-            Point::new(graph_x + graph_w - 4, graph_y + graph_h - 4),
+            &time_label,
+            Point::new(graph_x + graph_w / 2, graph_y + graph_h + 18),
             axis_style,
-            Alignment::Right,
-        )
-        .draw(fb)
-        .ok();
+            Alignment::Center,
+        ).draw(fb).ok();
     }
 
-    // X-axis label
-    let samples = temp_len.max(hum_len);
-    let minutes = (samples as u32 * 5) / 60; // 5s per sample
-    let time_label = if minutes > 0 {
-        format!("Last {} min", minutes)
-    } else {
-        "Collecting...".to_string()
-    };
+    // Range label (Now) on right side of x-axis
     Text::with_alignment(
-        &time_label,
-        Point::new(graph_x + graph_w / 2, graph_y + graph_h + 18),
+        "Now",
+        Point::new(graph_x + graph_w, graph_y + graph_h + 14),
         axis_style,
-        Alignment::Center,
-    )
-    .draw(fb)
-    .ok();
+        Alignment::Right,
+    ).draw(fb).ok();
 
     // Legend
     let legend_y = graph_y + graph_h + 36;
@@ -199,7 +227,7 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
     // Bottom hint
     let hint_style = MonoTextStyle::new(&PROFONT_14_POINT, TEXT_BOTTOM);
     Text::with_alignment(
-        "(swipe <-/-> or tap header to switch pages)",
+        "(tap graph: 2h/24h | swipe <-/-> to switch pages)",
         Point::new(screen_w / 2, screen_h - 4),
         hint_style,
         Alignment::Center,

@@ -76,3 +76,85 @@ impl<T: Clone> Clone for PsBox<T> {
         unsafe { *self.0 = (**source).clone() };
     }
 }
+
+// ── PsBoxSlice ─────────────────────────────────────────────────────────────
+//
+// A PSRAM-backed fixed-length slice, analogous to Box<[T]> but allocated from
+// PSRAM.  Used for large arrays inside PsBox structs (e.g. PressureHistory)
+// so that Clone never touches internal SRAM.
+
+pub struct PsBoxSlice<T> {
+    ptr: *mut T,
+    len: usize,
+}
+
+unsafe impl<T: Send> Send for PsBoxSlice<T> {}
+unsafe impl<T: Sync> Sync for PsBoxSlice<T> {}
+
+impl<T: Default> PsBoxSlice<T> {
+    /// Allocate `len` elements in PSRAM, initialised with `T::default()`.
+    pub fn new(len: usize) -> Self {
+        let byte_size = len * mem::size_of::<T>();
+        let ptr = if byte_size == 0 {
+            mem::align_of::<T>() as *mut T
+        } else {
+            let p = unsafe {
+                esp_idf_sys::heap_caps_malloc(byte_size, esp_idf_sys::MALLOC_CAP_SPIRAM) as *mut T
+            };
+            assert!(!p.is_null(), "PsBoxSlice::new: PSRAM alloc failed (size={})", byte_size);
+            for i in 0..len {
+                unsafe { ptr::write(p.add(i), T::default()) };
+            }
+            p
+        };
+        PsBoxSlice { ptr, len }
+    }
+}
+
+impl<T> core::ops::Deref for PsBoxSlice<T> {
+    type Target = [T];
+    fn deref(&self) -> &[T] {
+        unsafe { core::slice::from_raw_parts(self.ptr, self.len) }
+    }
+}
+
+impl<T> core::ops::DerefMut for PsBoxSlice<T> {
+    fn deref_mut(&mut self) -> &mut [T] {
+        unsafe { core::slice::from_raw_parts_mut(self.ptr, self.len) }
+    }
+}
+
+impl<T> Drop for PsBoxSlice<T> {
+    fn drop(&mut self) {
+        let byte_size = self.len * mem::size_of::<T>();
+        if byte_size == 0 {
+            return;
+        }
+        unsafe {
+            for i in 0..self.len {
+                ptr::drop_in_place(self.ptr.add(i));
+            }
+            esp_idf_sys::heap_caps_free(self.ptr as *mut _);
+        }
+    }
+}
+
+impl<T: Clone> Clone for PsBoxSlice<T> {
+    /// Clone all elements into a new PSRAM allocation — never touches SRAM.
+    fn clone(&self) -> Self {
+        let byte_size = self.len * mem::size_of::<T>();
+        let ptr = if byte_size == 0 {
+            mem::align_of::<T>() as *mut T
+        } else {
+            let p = unsafe {
+                esp_idf_sys::heap_caps_malloc(byte_size, esp_idf_sys::MALLOC_CAP_SPIRAM) as *mut T
+            };
+            assert!(!p.is_null(), "PsBoxSlice::clone: PSRAM alloc failed (size={})", byte_size);
+            for i in 0..self.len {
+                unsafe { ptr::write(p.add(i), (*self.ptr.add(i)).clone()) };
+            }
+            p
+        };
+        PsBoxSlice { ptr, len: self.len }
+    }
+}

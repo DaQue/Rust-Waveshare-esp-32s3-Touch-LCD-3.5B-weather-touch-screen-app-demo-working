@@ -7,6 +7,8 @@
 //
 // The struct lives inside a PsBox<PressureHistory> so both arrays are in PSRAM.
 
+use crate::psbox::PsBoxSlice;
+
 // ── Constants ───────────────────────────────────────────────────────
 
 pub const LONG_PERIOD_SECS:  u32 = 180;  // every 36th BME read @ 5s = 3 min cadence
@@ -25,23 +27,23 @@ pub struct PressureSample {
 
 #[derive(Clone)]
 pub struct PressureHistory {
-    short: Box<[PressureSample]>,  // heap-allocated; no large stack temp at init
+    short: PsBoxSlice<PressureSample>,  // PSRAM-allocated; clone never touches SRAM
     short_idx: usize,
     short_count: usize,
-    long: Box<[PressureSample]>,
+    long: PsBoxSlice<PressureSample>,
     long_idx: usize,
     long_count: usize,
 }
 
 impl PressureHistory {
     pub fn new() -> Self {
-        // vec! allocates directly on the heap — avoids a 15 KB stack temporary
-        // that would overflow the 32 KB main task stack.
+        // PsBoxSlice::new allocates directly in PSRAM — avoids both SRAM pressure
+        // and the 15 KB stack temporary that would occur with inline fixed arrays.
         Self {
-            short: vec![PressureSample::default(); SHORT_CAP].into_boxed_slice(),
+            short: PsBoxSlice::new(SHORT_CAP),
             short_idx: 0,
             short_count: 0,
-            long: vec![PressureSample::default(); LONG_CAP].into_boxed_slice(),
+            long: PsBoxSlice::new(LONG_CAP),
             long_idx: 0,
             long_count: 0,
         }
