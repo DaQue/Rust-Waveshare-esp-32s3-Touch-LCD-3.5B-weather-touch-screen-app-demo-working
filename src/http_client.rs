@@ -126,11 +126,18 @@ fn http_fetch_into(url: &str, headers: &[(&str, &str)], buf: &mut PsramBuf) -> R
                 "SRAM critically low for {} consecutive fetches (streak {})",
                 largest_block / 1024, streak
             );
-            // DIAGNOSTIC: reboot path disabled — log only, let it crash naturally
-            // so we can capture the backtrace.
         }
     } else {
         crate::SRAM_LOW_STREAK.store(0, Ordering::Relaxed);
+    }
+
+    // Proactive reboot if largest block is ≤ 7 KB — save history first.
+    if largest_block < 8_000 {
+        log::warn!(
+            "SRAM largest block ≤ 7 KB ({} KB) — signalling proactive reboot",
+            largest_block / 1024
+        );
+        crate::SRAM_DO_REBOOT.store(true, Ordering::Relaxed);
     }
 
     // Hard bail if essentially nothing is left contiguous.

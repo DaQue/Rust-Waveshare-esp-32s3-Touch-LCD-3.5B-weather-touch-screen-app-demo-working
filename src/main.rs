@@ -1256,6 +1256,7 @@ fn main() -> Result<()> {
     let mut orientation_candidate_count: u8 = 0;
     let mut last_orientation_change_ms: u32 = now_ms();
     let mut last_wifi_retry_ms: u32 = now_ms();
+    let mut last_nvs_save_ms: u32 = now_ms();
     let mut last_weather_success_ms: Option<u32> = None;
     let mut alerts_snapshot_seen = false;
     let mut last_alert_fingerprint = String::new();
@@ -1414,10 +1415,17 @@ fn main() -> Result<()> {
             }
         }
 
-        // DIAGNOSTIC: SRAM_DO_REBOOT path disabled — log only so crash is capturable
+        // Periodic NVS history save (every 30 min) so data survives unexpected resets.
+        if t.wrapping_sub(last_nvs_save_ms) >= 30 * 60 * 1_000 {
+            history_nvs_save(&state, &nvs);
+            last_nvs_save_ms = t;
+        }
+
+        // Proactive reboot when SRAM largest block ≤ 7 KB: save history first.
         if SRAM_DO_REBOOT.load(Ordering::Relaxed) {
-            log::error!("SRAM_DO_REBOOT flag set (diagnostic mode — no reboot)");
-            SRAM_DO_REBOOT.store(false, Ordering::Relaxed);
+            log::warn!("SRAM_DO_REBOOT: saving history to NVS then rebooting...");
+            history_nvs_save(&state, &nvs);
+            unsafe { esp_idf_sys::esp_restart(); }
         }
 
         // HVAC fast detection (every 5s)
