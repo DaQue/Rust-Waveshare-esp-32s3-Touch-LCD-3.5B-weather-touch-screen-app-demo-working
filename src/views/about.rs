@@ -73,7 +73,7 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
 
     // SRAM largest contiguous block — real TLS viability indicator
     let sram_block = unsafe {
-        esp_idf_sys::heap_caps_get_largest_free_block(esp_idf_sys::MALLOC_CAP_INTERNAL as u32)
+        esp_idf_sys::heap_caps_get_largest_free_block(esp_idf_sys::MALLOC_CAP_INTERNAL)
     } / 1024;
     Text::new("SRAM block", Point::new(lx, y), label_style).draw(fb).ok();
     let sram_text = format!("{} KB", sram_block);

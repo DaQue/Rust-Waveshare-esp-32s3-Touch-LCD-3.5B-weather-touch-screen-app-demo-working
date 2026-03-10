@@ -23,7 +23,7 @@ impl<T> PsBox<T> {
         let size = mem::size_of::<T>();
         if size == 0 {
             // Zero-sized type: use a dangling but non-null aligned pointer.
-            return PsBox(mem::align_of::<T>() as *mut T);
+            return PsBox(std::ptr::dangling_mut::<T>());
         }
         let ptr = unsafe {
             esp_idf_sys::heap_caps_malloc(
@@ -96,7 +96,7 @@ impl<T: Default> PsBoxSlice<T> {
     pub fn new(len: usize) -> Self {
         let byte_size = len * mem::size_of::<T>();
         let ptr = if byte_size == 0 {
-            mem::align_of::<T>() as *mut T
+            std::ptr::dangling_mut::<T>()
         } else {
             let p = unsafe {
                 esp_idf_sys::heap_caps_malloc(byte_size, esp_idf_sys::MALLOC_CAP_SPIRAM) as *mut T
@@ -144,7 +144,7 @@ impl<T: Clone> Clone for PsBoxSlice<T> {
     fn clone(&self) -> Self {
         let byte_size = self.len * mem::size_of::<T>();
         let ptr = if byte_size == 0 {
-            mem::align_of::<T>() as *mut T
+            std::ptr::dangling_mut::<T>()
         } else {
             let p = unsafe {
                 esp_idf_sys::heap_caps_malloc(byte_size, esp_idf_sys::MALLOC_CAP_SPIRAM) as *mut T

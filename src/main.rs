@@ -667,10 +667,7 @@ fn history_nvs_restore(state: &mut views::AppState, nvs: &Arc<Mutex<EspNvs<esp_i
     let mut buf = vec![0u8; total];
 
     let loaded = if let Ok(nvs_guard) = nvs.lock() {
-        match nvs_guard.get_raw(config::KEY_HIST_INDOOR, &mut buf) {
-            Ok(Some(_)) => true,
-            _ => false,
-        }
+        matches!(nvs_guard.get_raw(config::KEY_HIST_INDOOR, &mut buf), Ok(Some(_)))
     } else {
         false
     };
@@ -707,15 +704,12 @@ fn history_nvs_restore(state: &mut views::AppState, nvs: &Arc<Mutex<EspNvs<esp_i
     let press_total = pressure_history::PressureHistory::serialised_size();
     let mut pbuf = vec![0u8; press_total];
     let press_loaded = if let Ok(nvs_guard) = nvs.lock() {
-        match nvs_guard.get_raw(config::KEY_HIST_PRESS, &mut pbuf) {
-            Ok(Some(_)) => true,
-            _ => false,
-        }
+        matches!(nvs_guard.get_raw(config::KEY_HIST_PRESS, &mut pbuf), Ok(Some(_)))
     } else {
         false
     };
     if press_loaded {
-        state.pressure_history.from_bytes(&pbuf);
+        state.pressure_history.load_from_bytes(&pbuf);
         log::info!("Restored pressure history from NVS");
     }
 }
@@ -1376,7 +1370,7 @@ fn main() -> Result<()> {
                         state.indoor_pressure = Some(reading.pressure_hpa);
 
                         // Short buffer: every 3rd accepted read = ~15 s
-                        if bme_sample_tick % 3 == 0 {
+                        if bme_sample_tick.is_multiple_of(3) {
                             if state.indoor_temp_history.len() >= views::INDOOR_SHORT_MAX {
                                 state.indoor_temp_history.pop_front();
                             }
@@ -1394,7 +1388,7 @@ fn main() -> Result<()> {
                         }
 
                         // Long buffer: every 36th accepted read = ~3 min
-                        if bme_sample_tick % 36 == 0 {
+                        if bme_sample_tick.is_multiple_of(36) {
                             if state.indoor_temp_hist_long.len() >= views::INDOOR_LONG_MAX {
                                 state.indoor_temp_hist_long.pop_front();
                             }
@@ -1850,10 +1844,8 @@ fn main() -> Result<()> {
             let largest_sram = unsafe {
                 esp_idf_sys::heap_caps_get_largest_free_block(esp_idf_sys::MALLOC_CAP_INTERNAL)
             };
-            if largest_sram >= 8_000 {
-                if render_tx.try_send(state.clone()).is_ok() {
-                    state.dirty = false;
-                }
+            if largest_sram >= 8_000 && render_tx.try_send(state.clone()).is_ok() {
+                state.dirty = false;
             }
         }
 

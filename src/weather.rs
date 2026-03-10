@@ -528,7 +528,7 @@ pub fn format_alert_expiry(iso: &str) -> String {
     let day: u32 = date[8..10].parse().unwrap_or(0);
     let hour: u32 = rest[..2].parse().unwrap_or(0);
     let min: u32 = rest[3..5].parse().unwrap_or(0);
-    let month_str = if month >= 1 && month <= 12 { MONTHS[month - 1] } else { "???" };
+    let month_str = if (1..=12).contains(&month) { MONTHS[month - 1] } else { "???" };
     let (h12, ampm) = if hour == 0 { (12u32, "AM") }
         else if hour < 12 { (hour, "AM") }
         else if hour == 12 { (12, "PM") }

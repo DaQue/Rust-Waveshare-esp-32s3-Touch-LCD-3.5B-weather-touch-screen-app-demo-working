@@ -222,7 +222,7 @@ impl PressureHistory {
         out
     }
 
-    pub fn from_bytes(&mut self, bytes: &[u8]) {
+    pub fn load_from_bytes(&mut self, bytes: &[u8]) {
         let mut off = 0usize;
 
         // Read short ring

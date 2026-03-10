@@ -254,6 +254,7 @@ fn data_range(s0: &[f32], s1: &[f32]) -> (f32, f32) {
 }
 
 /// Draw a line graph from two VecDeque slices. Zero allocations — iterates directly.
+#[allow(clippy::too_many_arguments)]
 fn draw_line_graph(
     fb: &mut Framebuffer,
     s0: &[f32], s1: &[f32],

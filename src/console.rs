@@ -111,7 +111,7 @@ fn process_line(
             info!("uptime: {}h {}m", hours, mins);
             let heap_kb = unsafe { esp_idf_sys::esp_get_free_heap_size() } / 1024;
             info!("free heap: {} KB", heap_kb);
-            let sram_kb = unsafe { esp_idf_sys::heap_caps_get_largest_free_block(esp_idf_sys::MALLOC_CAP_INTERNAL as u32) } / 1024;
+            let sram_kb = unsafe { esp_idf_sys::heap_caps_get_largest_free_block(esp_idf_sys::MALLOC_CAP_INTERNAL) } / 1024;
             info!("SRAM block: {} KB", sram_kb);
             info!("hint: type 'help' for all commands");
         }
