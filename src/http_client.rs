@@ -109,34 +109,34 @@ fn http_fetch_into(url: &str, headers: &[(&str, &str)], buf: &mut PsramBuf) -> R
         largest_block / 1024,
         h, m, s
     );
-    // SRAM watch: track consecutive fetches below 12 KB largest block.
-    // At that level TLS is already impossible; proactively signal the main
-    // loop rather than letting the allocator crash mid-handshake.
+    // SRAM watch: graduated response to consecutive fetches below 12 KB.
+    //   1–2 hits : warn, track streak
+    //   3+ hits  : BME280 reset (drop driver object, re-init next interval)
+    //   < 8 KB   : BME280 reset + proactive reboot (save history first)
     if largest_block < 12_000 {
         let streak = crate::SRAM_LOW_STREAK.fetch_add(1, Ordering::Relaxed) + 1;
-        if streak == 1 {
-            log::warn!(
-                "SRAM < 12 KB ({} KB) — signalling BME280 reset (fetch streak {})",
-                largest_block / 1024, streak
-            );
-            crate::SRAM_BME_RESET.store(true, Ordering::Relaxed);
-        }
+        log::warn!(
+            "SRAM < 12 KB ({} KB) — low SRAM streak {}",
+            largest_block / 1024, streak
+        );
         if streak >= 3 {
             log::error!(
-                "SRAM critically low for {} consecutive fetches (streak {})",
-                largest_block / 1024, streak
+                "SRAM low for {} consecutive fetches — signalling BME280 reset",
+                streak
             );
+            crate::SRAM_BME_RESET.store(true, Ordering::Relaxed);
         }
     } else {
         crate::SRAM_LOW_STREAK.store(0, Ordering::Relaxed);
     }
 
-    // Proactive reboot if largest block is ≤ 7 KB — save history first.
+    // Proactive reboot if largest block is ≤ 7 KB — BME reset + save history first.
     if largest_block < 8_000 {
         log::warn!(
-            "SRAM largest block ≤ 7 KB ({} KB) — signalling proactive reboot",
+            "SRAM largest block ≤ 7 KB ({} KB) — signalling BME280 reset + proactive reboot",
             largest_block / 1024
         );
+        crate::SRAM_BME_RESET.store(true, Ordering::Relaxed);
         crate::SRAM_DO_REBOOT.store(true, Ordering::Relaxed);
     }
 
