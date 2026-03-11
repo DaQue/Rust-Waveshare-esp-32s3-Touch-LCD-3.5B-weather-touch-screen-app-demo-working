@@ -1308,6 +1308,11 @@ fn main() -> Result<()> {
                 // momentarily holds TWO 12.5 KB DMA buffers in SRAM simultaneously,
                 // permanently fragmenting the heap and breaking subsequent TLS.
                 if snapshot.orientation != current_orientation {
+                    log::info!(
+                        "orientation change: {:?} -> {:?}",
+                        current_orientation,
+                        snapshot.orientation
+                    );
                     let (w, h) = framebuffer_dims(snapshot.orientation);
                     let sz = embedded_graphics::prelude::OriginDimensions::size(&fb);
                     if w != sz.width || h != sz.height {
