@@ -1311,7 +1311,25 @@ fn main() -> Result<()> {
                     let (w, h) = framebuffer_dims(snapshot.orientation);
                     let sz = embedded_graphics::prelude::OriginDimensions::size(&fb);
                     if w != sz.width || h != sz.height {
-                        fb = framebuffer::Framebuffer::new(w, h);
+                        // Guard: only reallocate if there is enough DMA-capable SRAM.
+                        // Framebuffer::new() allocates a 12.5 KB DMA buffer; if the
+                        // largest free DMA block is too small the assert inside will
+                        // panic and crash the render thread.  Skip the realloc and
+                        // keep the current framebuffer — the view will render at the
+                        // wrong dimensions until the next successful realloc.
+                        let dma_free = unsafe {
+                            esp_idf_sys::heap_caps_get_largest_free_block(
+                                esp_idf_sys::MALLOC_CAP_DMA,
+                            )
+                        };
+                        if dma_free >= 15_000 {
+                            fb = framebuffer::Framebuffer::new(w, h);
+                        } else {
+                            log::warn!(
+                                "orientation change: skipping FB realloc — DMA free only {} bytes",
+                                dma_free
+                            );
+                        }
                     }
                     current_orientation = snapshot.orientation;
                 }
