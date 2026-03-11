@@ -158,3 +158,71 @@ impl<T: Clone> Clone for PsBoxSlice<T> {
         PsBoxSlice { ptr, len: self.len }
     }
 }
+
+// ── PsramRing ───────────────────────────────────────────────────────────────
+//
+// A fixed-capacity PSRAM-backed ring buffer for f32 samples.
+// Replaces VecDeque<f32> for sensor history so neither the live data nor
+// AppState clones ever touch internal SRAM.
+//
+// - push_back() overwrites the oldest element when full (no pop_front needed).
+// - as_slices() mirrors VecDeque::as_slices() so draw code is unchanged.
+// - Clone allocates entirely in PSRAM via PsBoxSlice::clone().
+
+pub struct PsramRing {
+    data: PsBoxSlice<f32>,
+    head: usize,  // index of oldest element
+    len:  usize,  // number of valid elements
+}
+
+unsafe impl Send for PsramRing {}
+unsafe impl Sync for PsramRing {}
+
+impl PsramRing {
+    pub fn new(capacity: usize) -> Self {
+        Self { data: PsBoxSlice::new(capacity), head: 0, len: 0 }
+    }
+
+    pub fn capacity(&self) -> usize { self.data.len() }
+    pub fn len(&self)      -> usize { self.len }
+    pub fn is_empty(&self) -> bool  { self.len == 0 }
+
+    /// Append a value. If the buffer is full, the oldest element is silently
+    /// overwritten (equivalent to pop_front + push_back on a VecDeque).
+    pub fn push_back(&mut self, v: f32) {
+        let cap = self.capacity();
+        if cap == 0 { return; }
+        let tail = (self.head + self.len) % cap;
+        self.data[tail] = v;
+        if self.len == cap {
+            self.head = (self.head + 1) % cap;
+        } else {
+            self.len += 1;
+        }
+    }
+
+    /// Returns (oldest…mid, mid…newest) slices, mirroring VecDeque::as_slices().
+    pub fn as_slices(&self) -> (&[f32], &[f32]) {
+        if self.len == 0 { return (&[], &[]); }
+        let cap = self.capacity();
+        if self.head + self.len <= cap {
+            (&self.data[self.head..self.head + self.len], &[])
+        } else {
+            let tail = (self.head + self.len) % cap;
+            (&self.data[self.head..cap], &self.data[..tail])
+        }
+    }
+}
+
+impl core::ops::Index<usize> for PsramRing {
+    type Output = f32;
+    fn index(&self, i: usize) -> &f32 {
+        &self.data[(self.head + i) % self.capacity()]
+    }
+}
+
+impl Clone for PsramRing {
+    fn clone(&self) -> Self {
+        Self { data: self.data.clone(), head: self.head, len: self.len }
+    }
+}

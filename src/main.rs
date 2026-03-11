@@ -607,10 +607,10 @@ fn draw_splash(fb: &mut framebuffer::Framebuffer, status: &str) {
 
 // ── NVS history persistence ──────────────────────────────────────────
 
-/// Serialise all sensor history VecDeques and pressure rings to NVS blobs.
+/// Serialise all sensor history rings and pressure rings to NVS blobs.
 /// Called just before a proactive SRAM-triggered reboot so the data survives.
 fn history_nvs_save(state: &views::AppState, nvs: &Arc<Mutex<EspNvs<esp_idf_svc::nvs::NvsDefault>>>) {
-    use std::collections::VecDeque;
+    use crate::psbox::PsramRing;
 
     const F: usize = core::mem::size_of::<f32>();
     const N: usize = 480;
@@ -632,7 +632,7 @@ fn history_nvs_save(state: &views::AppState, nvs: &Arc<Mutex<EspNvs<esp_idf_svc:
     let mut buf: &mut [u8] = buf;
     let mut off = 0usize;
 
-    fn write_deque(buf: &mut [u8], off: &mut usize, dq: &VecDeque<f32>, max: usize) {
+    fn write_deque(buf: &mut [u8], off: &mut usize, dq: &PsramRing, max: usize) {
         let len = dq.len().min(max);
         buf[*off..*off + 8].copy_from_slice(&(len as u64).to_le_bytes());
         *off += 8;
@@ -673,25 +673,32 @@ fn history_nvs_save(state: &views::AppState, nvs: &Arc<Mutex<EspNvs<esp_idf_svc:
 
 /// Restore sensor history from NVS blobs saved by a previous proactive reboot.
 fn history_nvs_restore(state: &mut views::AppState, nvs: &Arc<Mutex<EspNvs<esp_idf_svc::nvs::NvsDefault>>>) {
-    use std::collections::VecDeque;
-
     const F: usize = core::mem::size_of::<f32>();
     const N: usize = 480;
     let total = 4 * (8 + N * F);
-    let mut buf = vec![0u8; total];
+    let buf_ptr = unsafe {
+        esp_idf_sys::heap_caps_malloc(total, esp_idf_sys::MALLOC_CAP_SPIRAM) as *mut u8
+    };
+    if buf_ptr.is_null() {
+        log::warn!("history_nvs_restore: PSRAM alloc failed ({}B), skipping", total);
+        return;
+    }
+    unsafe { core::ptr::write_bytes(buf_ptr, 0, total); }
+    let buf = unsafe { core::slice::from_raw_parts_mut(buf_ptr, total) };
 
     let loaded = if let Ok(nvs_guard) = nvs.lock() {
-        matches!(nvs_guard.get_raw(config::KEY_HIST_INDOOR, &mut buf), Ok(Some(_)))
+        matches!(nvs_guard.get_raw(config::KEY_HIST_INDOOR, buf), Ok(Some(_)))
     } else {
         false
     };
 
     if !loaded {
         log::info!("No saved indoor history found in NVS");
+        unsafe { esp_idf_sys::heap_caps_free(buf_ptr as *mut core::ffi::c_void); }
         return;
     }
 
-    fn read_deque(buf: &[u8], off: &mut usize, dq: &mut VecDeque<f32>, max: usize) {
+    fn read_deque(buf: &[u8], off: &mut usize, dq: &mut crate::psbox::PsramRing, max: usize) {
         let len = (u64::from_le_bytes(buf[*off..*off + 8].try_into().unwrap()) as usize).min(max);
         *off += 8;
         for _ in 0..len {
@@ -713,19 +720,29 @@ fn history_nvs_restore(state: &mut views::AppState, nvs: &Arc<Mutex<EspNvs<esp_i
         state.indoor_temp_history.len(),
         state.indoor_temp_hist_long.len()
     );
+    unsafe { esp_idf_sys::heap_caps_free(buf_ptr as *mut core::ffi::c_void); }
 
     // Restore pressure history
     let press_total = pressure_history::PressureHistory::serialised_size();
-    let mut pbuf = vec![0u8; press_total];
+    let pbuf_ptr = unsafe {
+        esp_idf_sys::heap_caps_malloc(press_total, esp_idf_sys::MALLOC_CAP_SPIRAM) as *mut u8
+    };
+    if pbuf_ptr.is_null() {
+        log::warn!("history_nvs_restore: PSRAM alloc failed for pressure buf ({}B), skipping", press_total);
+        return;
+    }
+    unsafe { core::ptr::write_bytes(pbuf_ptr, 0, press_total); }
+    let pbuf = unsafe { core::slice::from_raw_parts_mut(pbuf_ptr, press_total) };
     let press_loaded = if let Ok(nvs_guard) = nvs.lock() {
-        matches!(nvs_guard.get_raw(config::KEY_HIST_PRESS, &mut pbuf), Ok(Some(_)))
+        matches!(nvs_guard.get_raw(config::KEY_HIST_PRESS, pbuf), Ok(Some(_)))
     } else {
         false
     };
     if press_loaded {
-        state.pressure_history.load_from_bytes(&pbuf);
+        state.pressure_history.load_from_bytes(pbuf);
         log::info!("Restored pressure history from NVS");
     }
+    unsafe { esp_idf_sys::heap_caps_free(pbuf_ptr as *mut core::ffi::c_void); }
 }
 
 // ── Entry point ─────────────────────────────────────────────────────
@@ -1385,13 +1402,7 @@ fn main() -> Result<()> {
 
                         // Short buffer: every 3rd accepted read = ~15 s
                         if bme_sample_tick.is_multiple_of(3) {
-                            if state.indoor_temp_history.len() >= views::INDOOR_SHORT_MAX {
-                                state.indoor_temp_history.pop_front();
-                            }
                             state.indoor_temp_history.push_back(reading.temperature_f);
-                            if state.indoor_hum_history.len() >= views::INDOOR_SHORT_MAX {
-                                state.indoor_hum_history.pop_front();
-                            }
                             state.indoor_hum_history.push_back(reading.humidity);
 
                             // Short pressure push (same 15 s cadence)
@@ -1403,13 +1414,7 @@ fn main() -> Result<()> {
 
                         // Long buffer: every 36th accepted read = ~3 min
                         if bme_sample_tick.is_multiple_of(36) {
-                            if state.indoor_temp_hist_long.len() >= views::INDOOR_LONG_MAX {
-                                state.indoor_temp_hist_long.pop_front();
-                            }
                             state.indoor_temp_hist_long.push_back(reading.temperature_f);
-                            if state.indoor_hum_hist_long.len() >= views::INDOOR_LONG_MAX {
-                                state.indoor_hum_hist_long.pop_front();
-                            }
                             state.indoor_hum_hist_long.push_back(reading.humidity);
                         }
 
@@ -1484,9 +1489,6 @@ fn main() -> Result<()> {
                 state.forecast = Some(forecast);
                 // Push outdoor temp for trend arrow (keep ~12 readings ≈ 2h of history)
                 state.outdoor_temp_history.push_back(temp_f);
-                if state.outdoor_temp_history.len() > 12 {
-                    state.outdoor_temp_history.pop_front();
-                }
                 state.status_text.clear();
                 state.status_text.push_str(&ip_address);
                 state.weather_stale = false;

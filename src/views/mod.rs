@@ -9,8 +9,8 @@ pub mod about;
 pub mod warning;
 pub mod nav_menu;
 
-use std::collections::VecDeque;
 use crate::config::OrientationMode;
+use crate::psbox::PsramRing;
 use crate::framebuffer::Framebuffer;
 use crate::layout::{self, Orientation};
 use crate::touch::Gesture;
@@ -88,12 +88,12 @@ pub struct AppState {
     pub indoor_temp: Option<f32>,
     pub indoor_humidity: Option<f32>,
     pub indoor_pressure: Option<f32>,
-    pub indoor_temp_history: VecDeque<f32>,
-    pub indoor_hum_history: VecDeque<f32>,
-    pub indoor_temp_hist_long: VecDeque<f32>,
-    pub indoor_hum_hist_long: VecDeque<f32>,
+    pub indoor_temp_history: PsramRing,
+    pub indoor_hum_history: PsramRing,
+    pub indoor_temp_hist_long: PsramRing,
+    pub indoor_hum_hist_long: PsramRing,
     pub plot_range_short: bool,      // true = 2h view, false = 24h view (Indoor + PressureHvac)
-    pub outdoor_temp_history: VecDeque<f32>,
+    pub outdoor_temp_history: PsramRing,
     pub time_text: String,
     pub status_text: String,
     pub bottom_text: String,
@@ -131,12 +131,12 @@ impl AppState {
             indoor_temp: None,
             indoor_humidity: None,
             indoor_pressure: None,
-            indoor_temp_history: VecDeque::new(),
-            indoor_hum_history: VecDeque::new(),
-            indoor_temp_hist_long: VecDeque::new(),
-            indoor_hum_hist_long: VecDeque::new(),
+            indoor_temp_history:   PsramRing::new(INDOOR_SHORT_MAX),
+            indoor_hum_history:    PsramRing::new(INDOOR_SHORT_MAX),
+            indoor_temp_hist_long: PsramRing::new(INDOOR_LONG_MAX),
+            indoor_hum_hist_long:  PsramRing::new(INDOOR_LONG_MAX),
             plot_range_short: true,
-            outdoor_temp_history: VecDeque::new(),
+            outdoor_temp_history: PsramRing::new(12),
             time_text: String::new(),
             status_text: "Starting...".to_string(),
             bottom_text: String::new(),
