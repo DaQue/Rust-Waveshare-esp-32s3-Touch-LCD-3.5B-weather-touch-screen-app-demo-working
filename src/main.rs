@@ -616,7 +616,20 @@ fn history_nvs_save(state: &views::AppState, nvs: &Arc<Mutex<EspNvs<esp_idf_svc:
     const N: usize = 480;
     // 4 arrays × (8 bytes length + N × 4 bytes f32) = 4 × (8 + N*4)
     let total = 4 * (8 + N * F);
-    let mut buf = vec![0u8; total];
+    // Allocate from PSRAM — this function is called at 30-min intervals and before
+    // proactive reboots when SRAM is already fragmented; vec! would OOM from SRAM.
+    let buf_ptr = unsafe {
+        esp_idf_sys::heap_caps_malloc(total, esp_idf_sys::MALLOC_CAP_SPIRAM) as *mut u8
+    };
+    if buf_ptr.is_null() {
+        log::warn!("history_nvs_save: PSRAM alloc failed ({}B), skipping", total);
+        return;
+    }
+    let buf = unsafe {
+        core::ptr::write_bytes(buf_ptr, 0, total);
+        core::slice::from_raw_parts_mut(buf_ptr, total)
+    };
+    let mut buf: &mut [u8] = buf;
     let mut off = 0usize;
 
     fn write_deque(buf: &mut [u8], off: &mut usize, dq: &VecDeque<f32>, max: usize) {
@@ -654,7 +667,8 @@ fn history_nvs_save(state: &views::AppState, nvs: &Arc<Mutex<EspNvs<esp_idf_svc:
         }
     }
 
-    log::info!("History NVS save complete ({} + {} bytes)", buf.len(), press_buf.len());
+    log::info!("History NVS save complete ({} + {} bytes)", total, press_buf.len());
+    unsafe { esp_idf_sys::heap_caps_free(buf_ptr as *mut core::ffi::c_void); }
 }
 
 /// Restore sensor history from NVS blobs saved by a previous proactive reboot.
