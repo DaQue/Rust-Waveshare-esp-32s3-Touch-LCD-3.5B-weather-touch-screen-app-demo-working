@@ -133,6 +133,14 @@ fn process_line(
             info!("free heap: {} KB", heap_kb);
             info!("debug: {}", crate::debug_flags::status_line());
         }
+        "history" => {
+            if sub == "save" || sub.is_empty() {
+                crate::debug_flags::REQUEST_HISTORY_SAVE.store(true, Ordering::Relaxed);
+                info!("history save requested (will run on next tick)");
+            } else {
+                info!("usage: history save");
+            }
+        }
         "reboot" => {
             info!("console: rebooting now");
             std::thread::sleep(std::time::Duration::from_millis(100));
@@ -153,6 +161,7 @@ fn print_help() {
     info!("  about                      - show firmware/device summary");
     info!("  version                    - print firmware version");
     info!("  reboot                     - reboot device");
+  info!("  history save               - save sensor history to NVS now");
     info!("  [Wi-Fi / API]");
     info!("  wifi show                  - show Wi-Fi config");
     info!("  wifi set <ssid> <pass>     - set Wi-Fi credentials");

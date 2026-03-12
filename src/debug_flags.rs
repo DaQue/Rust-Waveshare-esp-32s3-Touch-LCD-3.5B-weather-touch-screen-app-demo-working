@@ -18,6 +18,7 @@ pub static REQUEST_BEEP_TONE: AtomicI8 = AtomicI8::new(-1);
 pub static REQUEST_BEEP_STOP: AtomicBool = AtomicBool::new(false);
 pub static REQUEST_SILENCE_WARNING: AtomicBool = AtomicBool::new(false);
 pub static REQUEST_TEST_WARNING: AtomicBool = AtomicBool::new(false);
+pub static REQUEST_HISTORY_SAVE: AtomicBool = AtomicBool::new(false);
 
 pub fn is_on(flag: &AtomicBool) -> bool {
     flag.load(Ordering::Relaxed)

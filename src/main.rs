@@ -1457,6 +1457,14 @@ fn main() -> Result<()> {
             last_nvs_save_ms = t;
         }
 
+        // Manual history save requested from console (`history save`).
+        if debug_flags::REQUEST_HISTORY_SAVE.swap(false, Ordering::Relaxed) {
+            log::info!("console: manual history save requested");
+            history_nvs_save(&state, &nvs);
+            last_nvs_save_ms = t; // reset periodic timer too
+            log::info!("console: history save complete");
+        }
+
         // Proactive reboot when SRAM largest block ≤ 7 KB: save history first.
         if SRAM_DO_REBOOT.load(Ordering::Relaxed) {
             log::warn!("SRAM_DO_REBOOT: saving history to NVS then rebooting...");
