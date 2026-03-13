@@ -135,7 +135,7 @@ impl AppState {
             indoor_hum_history:    PsramRing::new(INDOOR_SHORT_MAX),
             indoor_temp_hist_long: PsramRing::new(INDOOR_LONG_MAX),
             indoor_hum_hist_long:  PsramRing::new(INDOOR_LONG_MAX),
-            plot_range_short: true,
+            plot_range_short: false,
             outdoor_temp_history: PsramRing::new(12),
             time_text: String::new(),
             status_text: "Starting...".to_string(),

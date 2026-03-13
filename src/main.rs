@@ -629,7 +629,7 @@ fn history_nvs_save(state: &views::AppState, nvs: &Arc<Mutex<EspNvs<esp_idf_svc:
         core::ptr::write_bytes(buf_ptr, 0, total);
         core::slice::from_raw_parts_mut(buf_ptr, total)
     };
-    let mut buf: &mut [u8] = buf;
+    let buf: &mut [u8] = buf;
     let mut off = 0usize;
 
     fn write_deque(buf: &mut [u8], off: &mut usize, dq: &PsramRing, max: usize) {
@@ -649,13 +649,13 @@ fn history_nvs_save(state: &views::AppState, nvs: &Arc<Mutex<EspNvs<esp_idf_svc:
         }
     }
 
-    write_deque(&mut buf, &mut off, &state.indoor_temp_history,    N);
-    write_deque(&mut buf, &mut off, &state.indoor_hum_history,     N);
-    write_deque(&mut buf, &mut off, &state.indoor_temp_hist_long,  N);
-    write_deque(&mut buf, &mut off, &state.indoor_hum_hist_long,   N);
+    write_deque(buf, &mut off, &state.indoor_temp_history,    N);
+    write_deque(buf, &mut off, &state.indoor_hum_history,     N);
+    write_deque(buf, &mut off, &state.indoor_temp_hist_long,  N);
+    write_deque(buf, &mut off, &state.indoor_hum_hist_long,   N);
 
     if let Ok(mut nvs_guard) = nvs.lock() {
-        if let Err(e) = nvs_guard.set_raw(config::KEY_HIST_INDOOR, &buf) {
+        if let Err(e) = nvs_guard.set_raw(config::KEY_HIST_INDOOR, buf) {
             log::warn!("NVS hist_indoor save failed: {:?}", e);
         }
     }
@@ -711,10 +711,10 @@ fn history_nvs_restore(state: &mut views::AppState, nvs: &Arc<Mutex<EspNvs<esp_i
     }
 
     let mut off = 0usize;
-    read_deque(&buf, &mut off, &mut state.indoor_temp_history,    N);
-    read_deque(&buf, &mut off, &mut state.indoor_hum_history,     N);
-    read_deque(&buf, &mut off, &mut state.indoor_temp_hist_long,  N);
-    read_deque(&buf, &mut off, &mut state.indoor_hum_hist_long,   N);
+    read_deque(buf, &mut off, &mut state.indoor_temp_history,    N);
+    read_deque(buf, &mut off, &mut state.indoor_hum_history,     N);
+    read_deque(buf, &mut off, &mut state.indoor_temp_hist_long,  N);
+    read_deque(buf, &mut off, &mut state.indoor_hum_hist_long,   N);
     log::info!(
         "Restored indoor history: {} short, {} long temp samples",
         state.indoor_temp_history.len(),
@@ -1887,11 +1887,15 @@ fn main() -> Result<()> {
         // doing so during an active TLS handshake on the weather thread can
         // exhaust the heap.  The render thread keeps the previous frame and
         // we retry next tick when things settle.
+        // Also: if SRAM is below the render threshold here, trigger the proactive
+        // reboot immediately — don't wait for the next HTTP fetch to notice.
         if state.dirty {
             let largest_sram = unsafe {
                 esp_idf_sys::heap_caps_get_largest_free_block(esp_idf_sys::MALLOC_CAP_INTERNAL)
             };
-            if largest_sram >= 8_000 && render_tx.try_send(state.clone()).is_ok() {
+            if largest_sram < 8_000 {
+                SRAM_DO_REBOOT.store(true, Ordering::Relaxed);
+            } else if render_tx.try_send(state.clone()).is_ok() {
                 state.dirty = false;
             }
         }

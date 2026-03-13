@@ -187,6 +187,60 @@ impl PressureHistory {
         if count > 0 { Some(sum / count as f32) } else { None }
     }
 
+    /// Stable altitude correction: average OWM-BME over ALL long-window paired samples
+    /// once ≥ 20 exist (~1 h). Falls back to short-window 12-sample average until then.
+    pub fn delta_owm_bme_stable(&self) -> Option<f32> {
+        let mut sum = 0.0f32;
+        let mut count = 0u32;
+        for s in self.iter_long() {
+            if let (Some(bme), Some(owm)) = (s.bme_hpa, s.owm_hpa) {
+                if bme.is_finite() && owm.is_finite() {
+                    sum += owm - bme;
+                    count += 1;
+                }
+            }
+        }
+        if count >= 20 {
+            Some(sum / count as f32)
+        } else {
+            self.delta_owm_bme_recent(12)
+        }
+    }
+
+    /// Pressure trend from the BME280 sensor: (delta_hpa, window_label).
+    /// Window priority: 3 h from long → 1 h from long → 30 min from short.
+    /// Returns None if insufficient data.
+    pub fn pressure_trend(&self) -> Option<(f32, &'static str)> {
+        if self.long_count >= 61 {
+            if let Some(d) = self.bme_delta_n_long(60) { return Some((d, "3h")); }
+        }
+        if self.long_count >= 21 {
+            if let Some(d) = self.bme_delta_n_long(20) { return Some((d, "1h")); }
+        }
+        if self.short_count >= 121 {
+            if let Some(d) = self.bme_delta_n_short(120) { return Some((d, "30m")); }
+        }
+        None
+    }
+
+    /// BME delta: newest minus the sample `n` steps before newest, long window.
+    fn bme_delta_n_long(&self, n: usize) -> Option<f32> {
+        if self.long_count < n + 1 { return None; }
+        let start = if self.long_count < LONG_CAP { 0 } else { self.long_idx };
+        let newest = self.long[(start + self.long_count - 1) % LONG_CAP].bme_hpa.filter(|v| v.is_finite());
+        let older  = self.long[(start + self.long_count - 1 - n) % LONG_CAP].bme_hpa.filter(|v| v.is_finite());
+        match (older, newest) { (Some(o), Some(n)) => Some(n - o), _ => None }
+    }
+
+    /// BME delta: newest minus the sample `n` steps before newest, short window.
+    fn bme_delta_n_short(&self, n: usize) -> Option<f32> {
+        if self.short_count < n + 1 { return None; }
+        let start = if self.short_count < SHORT_CAP { 0 } else { self.short_idx };
+        let newest = self.short[(start + self.short_count - 1) % SHORT_CAP].bme_hpa.filter(|v| v.is_finite());
+        let older  = self.short[(start + self.short_count - 1 - n) % SHORT_CAP].bme_hpa.filter(|v| v.is_finite());
+        match (older, newest) { (Some(o), Some(n)) => Some(n - o), _ => None }
+    }
+
     // ── NVS serialisation ───────────────────────────────────────────
 
     /// Byte size of the serialised form.

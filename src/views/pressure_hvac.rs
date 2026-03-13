@@ -91,15 +91,17 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
             .ok();
     }
 
-    // Delta readout (right-aligned in landscape, or separate line in portrait)
-    let delta_x = screen_w - 14;
-    let delta_y = if landscape { readout_y } else { readout_y + 32 };
-    // 12 samples = last hour at 5-min cadence; also used to normalize BME to sea-level on graph
-    let bme_offset = state.pressure_history.delta_owm_bme_recent(12);
-    if let Some(delta) = bme_offset {
+    // Stable altitude correction: long-window average once ≥ 20 samples (~1 h),
+    // short-window fallback until then. Used to normalize BME to sea-level on graph.
+    let bme_offset = state.pressure_history.delta_owm_bme_stable();
+
+    // Trend readout: hPa change over best available window (3h → 1h → 30m).
+    let trend_x = screen_w - 14;
+    let trend_y = if landscape { readout_y } else { readout_y + 32 };
+    if let Some((delta, label)) = state.pressure_history.pressure_trend() {
         let sign = if delta >= 0.0 { "+" } else { "" };
-        let txt = format!("Delta: {}{:.1}", sign, delta);
-        Text::with_alignment(&txt, Point::new(delta_x, delta_y), label_style, Alignment::Right)
+        let txt = format!("{}: {}{:.1}", label, sign, delta);
+        Text::with_alignment(&txt, Point::new(trend_x, trend_y), label_style, Alignment::Right)
             .draw(fb)
             .ok();
     }
