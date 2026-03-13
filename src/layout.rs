@@ -171,6 +171,15 @@ pub fn word_wrap(text: &str, max_chars: usize) -> Vec<String> {
     lines
 }
 
+/// Draw a vertical line segment.
+pub fn draw_vline(fb: &mut Framebuffer, x: i32, y1: i32, y2: i32, color: Rgb565) {
+    let style = PrimitiveStyleBuilder::new().fill_color(color).build();
+    Rectangle::new(Point::new(x, y1), Size::new(1, (y2 - y1).max(0) as u32))
+        .into_styled(style)
+        .draw(fb)
+        .ok();
+}
+
 /// Fill a horizontal line across the full screen width.
 pub fn draw_hline(fb: &mut Framebuffer, y: i32, color: Rgb565) {
     let style = PrimitiveStyleBuilder::new().fill_color(color).build();

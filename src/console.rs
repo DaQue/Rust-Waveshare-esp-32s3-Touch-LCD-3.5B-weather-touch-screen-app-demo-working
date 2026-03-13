@@ -141,6 +141,31 @@ fn process_line(
                 info!("usage: history save");
             }
         }
+        "log" => {
+            match sub {
+                "quiet" | "q" => {
+                    unsafe {
+                        esp_idf_sys::esp_log_level_set(
+                            b"*\0".as_ptr() as *const core::ffi::c_char,
+                            esp_idf_sys::esp_log_level_t_ESP_LOG_WARN,
+                        );
+                    }
+                    warn!("Log level -> WARN (quiet). Use 'log verbose' to restore.");
+                }
+                "verbose" | "v" | "info" => {
+                    unsafe {
+                        esp_idf_sys::esp_log_level_set(
+                            b"*\0".as_ptr() as *const core::ffi::c_char,
+                            esp_idf_sys::esp_log_level_t_ESP_LOG_INFO,
+                        );
+                    }
+                    info!("Log level -> INFO (verbose).");
+                }
+                _ => {
+                    info!("usage: log quiet | log verbose");
+                }
+            }
+        }
         "reboot" => {
             info!("console: rebooting now");
             std::thread::sleep(std::time::Duration::from_millis(100));
@@ -161,7 +186,8 @@ fn print_help() {
     info!("  about                      - show firmware/device summary");
     info!("  version                    - print firmware version");
     info!("  reboot                     - reboot device");
-  info!("  history save               - save sensor history to NVS now");
+    info!("  history save               - save sensor history to NVS now");
+    info!("  log quiet | log verbose    - set log level (quiet=WARN, verbose=INFO)");
     info!("  [Wi-Fi / API]");
     info!("  wifi show                  - show Wi-Fi config");
     info!("  wifi set <ssid> <pass>     - set Wi-Fi credentials");
