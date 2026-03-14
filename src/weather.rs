@@ -33,6 +33,7 @@ pub struct ForecastRow {
     pub title: String,
     pub detail: String,
     pub temp_text: String,
+    pub condition: String,
 }
 
 #[allow(dead_code)]
@@ -460,6 +461,7 @@ pub fn parse_forecast(json: &str) -> Result<Forecast> {
             title: wday_name.to_string(),
             detail: format!("{} Low {}° Wind {}", day.condition, low_i, wind_i),
             temp_text: format!("{}°", high_i),
+            condition: day.condition.clone(),
         });
 
         forecast_days.push(ForecastDay {
