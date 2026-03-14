@@ -50,11 +50,13 @@ fn draw_daily(fb: &mut Framebuffer, state: &AppState) {
     .ok();
 
     let card_w = screen_w - 2 * CARD_MARGIN;
-    let row_h = 60;
-    let row_stride = 66;
+    let portrait = state.orientation.is_portrait();
+    // Portrait: scale rows to fill 480px screen.  Landscape: compact 60px rows.
+    let row_h      = if portrait { (screen_h - 38 - 20) / FORECAST_ROWS as i32 - 6 } else { 60 };
+    let row_stride = row_h + 6;
     let row_y_base = 38;
 
-    // Draw 4 row cards
+    // Draw row cards
     for i in 0..FORECAST_ROWS {
         let y = row_y_base + (i as i32) * row_stride;
         draw_card(
@@ -67,40 +69,34 @@ fn draw_daily(fb: &mut Framebuffer, state: &AppState) {
     }
 
     if let Some(forecast) = &state.forecast {
+        let title_style  = MonoTextStyle::new(&PROFONT_14_POINT, TEXT_SECONDARY);
+        let detail_style = MonoTextStyle::new(&PROFONT_10_POINT, TEXT_DETAIL);
+        let temp_style   = MonoTextStyle::new(&PROFONT_24_POINT, TEXT_PRIMARY);
         for (i, row) in forecast.rows.iter().take(FORECAST_ROWS).enumerate() {
             let y = row_y_base + (i as i32) * row_stride;
+            // Proportional offsets — work for any row_h ≥ 60
+            let icon_dy   = row_h / 5;                // ~20% from top
+            let title_dy  = row_h * 2 / 5;           // ~40%  (PROFONT_14 baseline=13)
+            let detail_dy = row_h * 4 / 5;           // ~80%  (PROFONT_10 baseline=9)
+            let temp_dy   = (row_h * 3 / 5).max(38); // ~60%  (PROFONT_24 baseline=24)
 
-            // Icon (36x36)
-            row.icon.draw_36(fb, CARD_MARGIN + 8, y + 12);
+            row.icon.draw_36(fb, CARD_MARGIN + 8, y + icon_dy);
 
-            // Title (weekday)
-            let title_style = MonoTextStyle::new(&PROFONT_14_POINT, TEXT_SECONDARY);
-            Text::new(&row.title, Point::new(CARD_MARGIN + 52, y + 24), title_style)
-                .draw(fb)
-                .ok();
-
-            // Detail line
-            let detail_style = MonoTextStyle::new(&PROFONT_10_POINT, TEXT_DETAIL);
-            Text::new(&row.detail, Point::new(CARD_MARGIN + 52, y + 44), detail_style)
-                .draw(fb)
-                .ok();
-
-            // Temperature (right side)
-            let temp_style = MonoTextStyle::new(&PROFONT_24_POINT, TEXT_PRIMARY);
+            Text::new(&row.title, Point::new(CARD_MARGIN + 52, y + title_dy), title_style)
+                .draw(fb).ok();
+            Text::new(&row.detail, Point::new(CARD_MARGIN + 52, y + detail_dy), detail_style)
+                .draw(fb).ok();
             Text::with_alignment(
                 &row.temp_text,
-                Point::new(screen_w - CARD_MARGIN - 14, y + 38),
+                Point::new(screen_w - CARD_MARGIN - 14, y + temp_dy),
                 temp_style,
                 Alignment::Right,
-            )
-            .draw(fb)
-            .ok();
+            ).draw(fb).ok();
         }
     } else {
         let placeholder_style = MonoTextStyle::new(&PROFONT_14_POINT, TEXT_DETAIL);
         Text::new("No forecast data", Point::new(60, screen_h / 2), placeholder_style)
-            .draw(fb)
-            .ok();
+            .draw(fb).ok();
     }
 }
 
@@ -130,8 +126,9 @@ fn draw_hourly(fb: &mut Framebuffer, state: &AppState) {
     .ok();
 
     let card_w = screen_w - 2 * CARD_MARGIN;
-    let row_h = 60;
-    let row_stride = 66;
+    let portrait = state.orientation.is_portrait();
+    let row_h      = if portrait { (screen_h - 38 - 38) / 4 - 6 } else { 60 };
+    let row_stride = row_h + 6;
     let row_y_base = 38;
     let visible_rows = 4;
 
@@ -141,43 +138,33 @@ fn draw_hourly(fb: &mut Framebuffer, state: &AppState) {
                 day.entries.len().saturating_sub(visible_rows)
             );
 
+            let title_style  = MonoTextStyle::new(&PROFONT_14_POINT, TEXT_SECONDARY);
+            let detail_style = MonoTextStyle::new(&PROFONT_10_POINT, TEXT_DETAIL);
+            let temp_style   = MonoTextStyle::new(&PROFONT_24_POINT, TEXT_PRIMARY);
             for (vi, entry) in day.entries.iter().skip(scroll).take(visible_rows).enumerate() {
                 let y = row_y_base + (vi as i32) * row_stride;
 
-                draw_card(
-                    fb,
-                    CARD_MARGIN, y,
-                    card_w, row_h,
-                    CARD_RADIUS as u32,
-                    CARD_FILL_FORECAST, CARD_BORDER_FORECAST, 1,
-                );
+                draw_card(fb, CARD_MARGIN, y, card_w, row_h, CARD_RADIUS as u32,
+                          CARD_FILL_FORECAST, CARD_BORDER_FORECAST, 1);
 
-                // Icon (36x36)
-                entry.icon.draw_36(fb, CARD_MARGIN + 8, y + 12);
+                let icon_dy  = row_h / 5;
+                let title_dy = row_h * 2 / 5;
+                let detail_dy = row_h * 4 / 5;
+                let temp_dy  = (row_h * 3 / 5).max(38);
 
-                // Time label (e.g. "Tue 12AM")
+                entry.icon.draw_36(fb, CARD_MARGIN + 8, y + icon_dy);
+
                 let time_label = format!("{} {}", day_title, entry.time_text);
-                let title_style = MonoTextStyle::new(&PROFONT_14_POINT, TEXT_SECONDARY);
-                Text::new(&time_label, Point::new(CARD_MARGIN + 52, y + 24), title_style)
-                    .draw(fb)
-                    .ok();
-
-                // Detail (feels + wind)
-                let detail_style = MonoTextStyle::new(&PROFONT_10_POINT, TEXT_DETAIL);
-                Text::new(&entry.detail, Point::new(CARD_MARGIN + 52, y + 44), detail_style)
-                    .draw(fb)
-                    .ok();
-
-                // Temperature (right)
-                let temp_style = MonoTextStyle::new(&PROFONT_24_POINT, TEXT_PRIMARY);
+                Text::new(&time_label, Point::new(CARD_MARGIN + 52, y + title_dy), title_style)
+                    .draw(fb).ok();
+                Text::new(&entry.detail, Point::new(CARD_MARGIN + 52, y + detail_dy), detail_style)
+                    .draw(fb).ok();
                 Text::with_alignment(
                     &entry.temp_text,
-                    Point::new(screen_w - CARD_MARGIN - 14, y + 38),
+                    Point::new(screen_w - CARD_MARGIN - 14, y + temp_dy),
                     temp_style,
                     Alignment::Right,
-                )
-                .draw(fb)
-                .ok();
+                ).draw(fb).ok();
             }
 
             // Scroll indicator
