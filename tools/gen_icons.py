@@ -7,6 +7,7 @@ Usage:
     python3 tools/gen_icons.py --preview # preview only, no BMP output
 
 Output BMPs: src/icons/<name>_80.bmp  (80×80)
+             src/icons/<name>_48.bmp  (48×48)
              src/icons/<name>_36.bmp  (36×36)
 Preview PNGs: tools/icon_preview.png
               tools/icon_preview_small.png
@@ -354,9 +355,9 @@ make_preview()
 if not PREVIEW_ONLY:
     os.makedirs(OUT_DIR, exist_ok=True)
     for name, fn in ICONS:
-        for size, suffix in [(80, "80"), (36, "36")]:
+        for size, suffix in [(80, "80"), (48, "48"), (36, "36")]:
             img  = render_icon(fn, size)
             path = os.path.join(OUT_DIR, f"{name}_{suffix}.bmp")
             save_bmp_rgb24(img, path)
             print(f"  {path}")
-    print(f"Generated {len(ICONS)*2} BMPs in {OUT_DIR}/")
+    print(f"Generated {len(ICONS)*3} BMPs in {OUT_DIR}/")

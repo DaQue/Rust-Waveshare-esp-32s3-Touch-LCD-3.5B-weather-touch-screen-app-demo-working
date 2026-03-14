@@ -660,14 +660,29 @@ fn history_nvs_save(state: &views::AppState, nvs: &Arc<Mutex<EspNvs<esp_idf_svc:
         }
     }
 
-    let press_buf = state.pressure_history.to_bytes();
-    if let Ok(mut nvs_guard) = nvs.lock() {
-        if let Err(e) = nvs_guard.set_raw(config::KEY_HIST_PRESS, &press_buf) {
-            log::warn!("NVS hist_press save failed: {:?}", e);
+    // Allocate pressure history buffer from PSRAM — to_bytes() uses a SRAM Vec which
+    // is unnecessarily risky when SRAM may already be fragmented before a reboot.
+    let press_total = pressure_history::PressureHistory::serialised_size();
+    let pbuf_ptr = unsafe {
+        esp_idf_sys::heap_caps_malloc(press_total, esp_idf_sys::MALLOC_CAP_SPIRAM) as *mut u8
+    };
+    if pbuf_ptr.is_null() {
+        log::warn!("history_nvs_save: PSRAM alloc failed for pressure ({}B), skipping", press_total);
+    } else {
+        let pbuf = unsafe {
+            core::ptr::write_bytes(pbuf_ptr, 0, press_total);
+            core::slice::from_raw_parts_mut(pbuf_ptr, press_total)
+        };
+        state.pressure_history.write_bytes(pbuf);
+        if let Ok(mut nvs_guard) = nvs.lock() {
+            if let Err(e) = nvs_guard.set_raw(config::KEY_HIST_PRESS, pbuf) {
+                log::warn!("NVS hist_press save failed: {:?}", e);
+            }
         }
+        unsafe { esp_idf_sys::heap_caps_free(pbuf_ptr as *mut core::ffi::c_void); }
     }
 
-    log::info!("History NVS save complete ({} + {} bytes)", total, press_buf.len());
+    log::info!("History NVS save complete ({} + {} bytes)", total, press_total);
     unsafe { esp_idf_sys::heap_caps_free(buf_ptr as *mut core::ffi::c_void); }
 }
 

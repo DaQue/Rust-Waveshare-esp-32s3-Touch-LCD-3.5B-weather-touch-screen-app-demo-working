@@ -50,6 +50,22 @@ static ICON_ATMOSPHERE_80: &[u8] = include_bytes!("icons/atmosphere_80.bmp");
 static ICON_MIST_80: &[u8] = include_bytes!("icons/mist_80.bmp");
 static ICON_FOG_80: &[u8] = include_bytes!("icons/fog_80.bmp");
 
+// ── 48x48 icons (forecast strip) ────────────────────────────────────
+
+static ICON_CLEAR_48: &[u8] = include_bytes!("icons/clear_48.bmp");
+static ICON_FEW_CLOUDS_48: &[u8] = include_bytes!("icons/few_clouds_48.bmp");
+static ICON_SCATTERED_CLOUDS_48: &[u8] = include_bytes!("icons/scattered_clouds_48.bmp");
+static ICON_BROKEN_CLOUDS_48: &[u8] = include_bytes!("icons/broken_clouds_48.bmp");
+static ICON_OVERCAST_48: &[u8] = include_bytes!("icons/overcast_48.bmp");
+static ICON_SHOWER_RAIN_48: &[u8] = include_bytes!("icons/shower_rain_48.bmp");
+static ICON_RAIN_48: &[u8] = include_bytes!("icons/rain_48.bmp");
+static ICON_DRIZZLE_48: &[u8] = include_bytes!("icons/drizzle_48.bmp");
+static ICON_THUNDERSTORM_48: &[u8] = include_bytes!("icons/thunderstorm_48.bmp");
+static ICON_SNOW_48: &[u8] = include_bytes!("icons/snow_48.bmp");
+static ICON_ATMOSPHERE_48: &[u8] = include_bytes!("icons/atmosphere_48.bmp");
+static ICON_MIST_48: &[u8] = include_bytes!("icons/mist_48.bmp");
+static ICON_FOG_48: &[u8] = include_bytes!("icons/fog_48.bmp");
+
 // ── 36x36 icons (forecast rows) ─────────────────────────────────────
 
 static ICON_CLEAR_36: &[u8] = include_bytes!("icons/clear_36.bmp");
@@ -85,6 +101,24 @@ impl WeatherIcon {
         }
     }
 
+    fn bmp_data_48(self) -> &'static [u8] {
+        match self {
+            Self::Clear => ICON_CLEAR_48,
+            Self::FewClouds => ICON_FEW_CLOUDS_48,
+            Self::ScatteredClouds => ICON_SCATTERED_CLOUDS_48,
+            Self::BrokenClouds => ICON_BROKEN_CLOUDS_48,
+            Self::Overcast => ICON_OVERCAST_48,
+            Self::ShowerRain => ICON_SHOWER_RAIN_48,
+            Self::Rain => ICON_RAIN_48,
+            Self::Drizzle => ICON_DRIZZLE_48,
+            Self::Thunderstorm => ICON_THUNDERSTORM_48,
+            Self::Snow => ICON_SNOW_48,
+            Self::Atmosphere => ICON_ATMOSPHERE_48,
+            Self::Mist => ICON_MIST_48,
+            Self::Fog => ICON_FOG_48,
+        }
+    }
+
     fn bmp_data_36(self) -> &'static [u8] {
         match self {
             Self::Clear => ICON_CLEAR_36,
@@ -106,6 +140,13 @@ impl WeatherIcon {
     /// Draw the 80x80 icon at the given position, treating BG color as transparent.
     pub fn draw_80(self, fb: &mut Framebuffer, x: i32, y: i32) {
         if let Ok(bmp) = Bmp::<Rgb565>::from_slice(self.bmp_data_80()) {
+            draw_bmp_transparent(fb, &bmp, x, y);
+        }
+    }
+
+    /// Draw the 48x48 icon at the given position, treating BG color as transparent.
+    pub fn draw_48(self, fb: &mut Framebuffer, x: i32, y: i32) {
+        if let Ok(bmp) = Bmp::<Rgb565>::from_slice(self.bmp_data_48()) {
             draw_bmp_transparent(fb, &bmp, x, y);
         }
     }

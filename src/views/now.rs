@@ -127,7 +127,7 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
     }
 
     let card_top = 36;
-    let card_h = if state.orientation.is_portrait() { 178 } else { 150 };
+    let card_h = if state.orientation.is_portrait() { 178 } else { 140 };
     draw_card(
         fb,
         CARD_MARGIN,
@@ -208,11 +208,11 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
 
             // Indoor right panel
             let ind_x = DIVIDER_X + 10;
-            let ind_style_label = MonoTextStyle::new(&PROFONT_12_POINT, TEXT_HEADER);
+            let ind_style_label = MonoTextStyle::new(&PROFONT_14_POINT, TEXT_HEADER);
             let ind_style_temp  = MonoTextStyle::new(&PROFONT_18_POINT, TEXT_PRIMARY);
             let ind_style_small = MonoTextStyle::new(&PROFONT_10_POINT, TEXT_TERTIARY);
 
-            // "Indoor": baseline=11 for PROFONT_12, cell_top = y-11; card_top+15=51 → cell_top=40 ✓
+            // "Indoor": baseline=14 for PROFONT_14, cell_top = y-14; card_top+15=51 → cell_top=37 ✓
             Text::new("Indoor", Point::new(ind_x, card_top + 15), ind_style_label).draw(fb).ok();
 
             if let Some(t) = state.indoor_temp {
@@ -227,7 +227,8 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
                 Text::new(&h_text, Point::new(ind_x, card_top + 72), ind_style_small).draw(fb).ok();
             }
             if let Some(p) = state.indoor_pressure {
-                let p_text = format!("{:.1} hPa", p);
+                let correction = state.pressure_history.delta_owm_bme_stable().unwrap_or(0.0);
+                let p_text = format!("{:.1} hPa", p + correction);
                 Text::new(&p_text, Point::new(ind_x, card_top + 88), ind_style_small).draw(fb).ok();
             }
             // Pressure trend indicator (3h/1h/30m)
@@ -286,13 +287,16 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
                 ).draw(fb).ok();
             }
         } else {
-            // Landscape: 4 columns across full card width
+            // Landscape: "Forecast ►" label + 4 columns
+            let fc_label_style = MonoTextStyle::new(&PROFONT_12_POINT, TEXT_HEADER);
+            Text::new("Forecast >", Point::new(CARD_MARGIN + 8, fc_top + 14), fc_label_style)
+                .draw(fb).ok();
             let col_w = (screen_w - 2 * CARD_MARGIN) / 4;
             for (i, row) in fc.rows.iter().take(4).enumerate() {
                 let cx = CARD_MARGIN + (i as i32) * col_w + col_w / 2;
-                Text::with_alignment(&row.title, Point::new(cx, fc_top + 26), day_style, Alignment::Center)
+                Text::with_alignment(&row.title, Point::new(cx, fc_top + 30), day_style, Alignment::Center)
                     .draw(fb).ok();
-                row.icon.draw_36(fb, cx - 18, fc_top + 36);
+                row.icon.draw_48(fb, cx - 24, fc_top + 36);
                 let temp_label = format!("{}°", row.temp_f);
                 Text::with_alignment(&temp_label, Point::new(cx, fc_top + fc_h - 8), temp_style, Alignment::Center)
                     .draw(fb).ok();

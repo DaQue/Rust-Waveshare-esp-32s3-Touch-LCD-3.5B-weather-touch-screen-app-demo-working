@@ -250,31 +250,30 @@ impl PressureHistory {
         (8 + 8 + SHORT_CAP * 8) + (8 + 8 + LONG_CAP * 8)
     }
 
-    pub fn to_bytes(&self) -> Vec<u8> {
-        let mut out = Vec::with_capacity(Self::serialised_size());
-
-        // Write short ring
-        out.extend_from_slice(&(self.short_count as u64).to_le_bytes());
-        out.extend_from_slice(&(self.short_idx   as u64).to_le_bytes());
+    /// Serialise into a caller-provided buffer (must be `serialised_size()` bytes).
+    /// Use this instead of `to_bytes()` when the buffer should come from PSRAM.
+    pub fn write_bytes(&self, out: &mut [u8]) {
+        let mut off = 0usize;
+        let push8 = |out: &mut [u8], off: &mut usize, v: u64| {
+            out[*off..*off+8].copy_from_slice(&v.to_le_bytes()); *off += 8;
+        };
+        let push4 = |out: &mut [u8], off: &mut usize, v: f32| {
+            out[*off..*off+4].copy_from_slice(&v.to_le_bytes()); *off += 4;
+        };
+        push8(out, &mut off, self.short_count as u64);
+        push8(out, &mut off, self.short_idx   as u64);
         for s in self.short.iter().take(SHORT_CAP) {
-            let bme = s.bme_hpa.unwrap_or(f32::NAN);
-            let owm = s.owm_hpa.unwrap_or(f32::NAN);
-            out.extend_from_slice(&bme.to_le_bytes());
-            out.extend_from_slice(&owm.to_le_bytes());
+            push4(out, &mut off, s.bme_hpa.unwrap_or(f32::NAN));
+            push4(out, &mut off, s.owm_hpa.unwrap_or(f32::NAN));
         }
-
-        // Write long ring
-        out.extend_from_slice(&(self.long_count as u64).to_le_bytes());
-        out.extend_from_slice(&(self.long_idx   as u64).to_le_bytes());
+        push8(out, &mut off, self.long_count as u64);
+        push8(out, &mut off, self.long_idx   as u64);
         for s in self.long.iter().take(LONG_CAP) {
-            let bme = s.bme_hpa.unwrap_or(f32::NAN);
-            let owm = s.owm_hpa.unwrap_or(f32::NAN);
-            out.extend_from_slice(&bme.to_le_bytes());
-            out.extend_from_slice(&owm.to_le_bytes());
+            push4(out, &mut off, s.bme_hpa.unwrap_or(f32::NAN));
+            push4(out, &mut off, s.owm_hpa.unwrap_or(f32::NAN));
         }
-
-        out
     }
+
 
     pub fn load_from_bytes(&mut self, bytes: &[u8]) {
         let mut off = 0usize;
