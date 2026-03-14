@@ -505,6 +505,10 @@ pub fn fetch_weather(
     info!("Fetching current weather...");
     let current = crate::http_client::https_get_json(&weather_url, &[], parse_current_weather)?;
 
+    // 1s gap lets mbedTLS fully release heap before the next TLS handshake.
+    // Back-to-back handshakes transiently fragmented SRAM to 11KB in testing.
+    std::thread::sleep(std::time::Duration::from_secs(1));
+
     info!("Fetching forecast...");
     let forecast = crate::http_client::https_get_json(&forecast_url, &[], parse_forecast)?;
 
