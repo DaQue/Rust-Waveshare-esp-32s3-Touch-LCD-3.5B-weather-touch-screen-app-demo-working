@@ -57,7 +57,6 @@ pub const TEXT_SILENCE_BUTTON: Rgb565 = rgb(255, 255, 255);
 // ── Text colors ─────────────────────────────────────────────────────
 
 pub const TEXT_HEADER: Rgb565 = rgb(222, 225, 230);
-pub const TEXT_STATUS: Rgb565 = rgb(182, 187, 196);
 pub const TEXT_PRIMARY: Rgb565 = rgb(232, 235, 240);
 pub const TEXT_SECONDARY: Rgb565 = rgb(225, 228, 233);
 pub const TEXT_TERTIARY: Rgb565 = rgb(188, 196, 208);

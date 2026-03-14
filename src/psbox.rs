@@ -185,6 +185,7 @@ impl PsramRing {
 
     pub fn capacity(&self) -> usize { self.data.len() }
     pub fn len(&self)      -> usize { self.len }
+    #[allow(dead_code)]
     pub fn is_empty(&self) -> bool  { self.len == 0 }
 
     /// Append a value. If the buffer is full, the oldest element is silently
