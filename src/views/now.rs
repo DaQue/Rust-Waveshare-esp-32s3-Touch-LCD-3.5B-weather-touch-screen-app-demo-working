@@ -327,15 +327,23 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
             Text::new("Forecast >", Point::new(CARD_MARGIN + 8, fc_top + 14), fc_label_style)
                 .draw(fb).ok();
             let col_w = (screen_w - 2 * CARD_MARGIN) / 4;
+            // Vertical layout within the strip (fc_h ≈ 122px):
+            //   Day name   baseline y = fc_top + 20
+            //   Icon top            y = fc_top + 28  (48px → bottom at fc_top+76)
+            //   Temp       baseline y = fc_top + 91  (PROFONT_14 h=17, 7px gap below icon)
+            //   Condition  baseline y = fc_top + 106 (PROFONT_10 h=12, 3px gap)
+            const ICON_TOP:  i32 = 28;
+            const TEMP_BASE: i32 = 91;
+            const COND_BASE: i32 = 106;
             for (i, row) in fc.rows.iter().take(4).enumerate() {
                 let cx = CARD_MARGIN + (i as i32) * col_w + col_w / 2;
-                Text::with_alignment(&row.title, Point::new(cx, fc_top + 30), day_style, Alignment::Center)
+                Text::with_alignment(&row.title, Point::new(cx, fc_top + 20), day_style, Alignment::Center)
                     .draw(fb).ok();
-                row.icon.draw_48(fb, cx - 24, fc_top + 36);
+                row.icon.draw_48(fb, cx - 24, fc_top + ICON_TOP);
                 let temp_label = format!("{}°", row.temp_f);
-                Text::with_alignment(&temp_label, Point::new(cx, fc_top + fc_h - 18), temp_style, Alignment::Center)
+                Text::with_alignment(&temp_label, Point::new(cx, fc_top + TEMP_BASE), temp_style, Alignment::Center)
                     .draw(fb).ok();
-                Text::with_alignment(&row.condition, Point::new(cx, fc_top + fc_h - 8), cond_style, Alignment::Center)
+                Text::with_alignment(&row.condition, Point::new(cx, fc_top + COND_BASE), cond_style, Alignment::Center)
                     .draw(fb).ok();
             }
         }
