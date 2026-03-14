@@ -1,7 +1,7 @@
 use embedded_graphics::{
     mono_font::MonoTextStyle,
     prelude::*,
-    primitives::{Triangle, PrimitiveStyle},
+    primitives::{Triangle, PrimitiveStyle, Rectangle, PrimitiveStyleBuilder},
     text::{Alignment, Text},
 };
 use profont::{PROFONT_10_POINT, PROFONT_12_POINT, PROFONT_14_POINT, PROFONT_18_POINT, PROFONT_24_POINT};
@@ -43,6 +43,43 @@ fn draw_temp_trend(fb: &mut Framebuffer, trend: i8, cx: i32, cy: i32) {
         .draw(fb).ok();
 }
 
+/// Draw WiFi signal bars + RSSI dBm value, right-aligned at (x_right, y_base).
+fn draw_wifi_signal(fb: &mut Framebuffer, x_right: i32, y_base: i32, rssi: Option<i8>) {
+    // 4 bars: width 3px, gap 2px, heights [5,8,11,14] — right-aligned before rssi text
+    let text_reserve = 24i32; // space for "-90" + padding
+    let bar_w = 3i32;
+    let bar_gap = 2i32;
+    let bars_total_w = 4 * bar_w + 3 * bar_gap; // 18px
+    let bars_x = x_right - text_reserve - 4 - bars_total_w;
+
+    let bars_active: usize = match rssi {
+        None => 0,
+        Some(r) if r >= -60 => 4,
+        Some(r) if r >= -70 => 3,
+        Some(r) if r >= -80 => 2,
+        Some(_) => 1,
+    };
+
+    let heights = [5i32, 8, 11, 14];
+    for i in 0..4usize {
+        let x = bars_x + i as i32 * (bar_w + bar_gap);
+        let h = heights[i];
+        let color = if i < bars_active { rgb(100, 200, 100) } else { rgb(45, 55, 70) };
+        let style = PrimitiveStyleBuilder::new().fill_color(color).build();
+        Rectangle::new(Point::new(x, y_base - h), Size::new(bar_w as u32, h as u32))
+            .into_styled(style)
+            .draw(fb).ok();
+    }
+
+    let rssi_text = match rssi {
+        Some(r) => format!("{}", r),
+        None => "--".to_string(),
+    };
+    let rssi_style = MonoTextStyle::new(&PROFONT_10_POINT, rgb(150, 160, 175));
+    Text::with_alignment(&rssi_text, Point::new(x_right, y_base), rssi_style, Alignment::Right)
+        .draw(fb).ok();
+}
+
 pub fn draw(fb: &mut Framebuffer, state: &AppState) {
     let (screen_w, screen_h) = screen_size(state.orientation);
     fb.clear_color(BG_NOW);
@@ -57,36 +94,31 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
     let top_alert_kind = state.weather_alerts.first().map(|a| a.kind());
 
     if let Some(cw) = &state.current_weather {
-        let city_text = format!("{}, {}", cw.city, cw.country);
+        // Alert color tint on city name when alerts active
+        let city_color = match top_alert_kind {
+            Some(AlertKind::Warning) => rgb(255, 130, 130),
+            Some(AlertKind::Watch) => rgb(255, 230, 120),
+            Some(AlertKind::Advisory) => rgb(255, 200, 110),
+            _ => TEXT_HEADER,
+        };
+        let city_style = MonoTextStyle::new(&PROFONT_14_POINT, city_color);
         Text::with_alignment(
-            &city_text,
+            &cw.city,
             Point::new(screen_w / 2, 24),
-            header_style,
+            city_style,
             Alignment::Center,
         )
         .draw(fb)
         .ok();
     }
 
-    let status_color = match top_alert_kind {
-        Some(AlertKind::Warning) => rgb(255, 90, 90),
-        Some(AlertKind::Watch) => rgb(255, 225, 80),
-        Some(AlertKind::Advisory) => rgb(255, 180, 80),
-        _ => TEXT_STATUS,
-    };
-    let status_style = MonoTextStyle::new(&PROFONT_10_POINT, status_color);
-    Text::with_alignment(
-        &state.status_text,
-        Point::new(screen_w - 8, 24),
-        status_style,
-        Alignment::Right,
-    )
-    .draw(fb)
-    .ok();
+    // WiFi signal bars + RSSI, right-aligned in header
+    draw_wifi_signal(fb, screen_w - 8, 24, state.wifi_rssi);
+
     if state.weather_stale {
         let stale_style = MonoTextStyle::new(&PROFONT_10_POINT, rgb(255, 225, 80));
         Text::with_alignment(
-            "WX STALE",
+            "STALE",
             Point::new(screen_w - 8, 14),
             stale_style,
             Alignment::Right,
