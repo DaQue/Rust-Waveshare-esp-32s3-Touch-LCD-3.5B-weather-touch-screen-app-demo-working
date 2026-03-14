@@ -146,7 +146,7 @@ fn process_line(
                 "quiet" | "q" => {
                     unsafe {
                         esp_idf_sys::esp_log_level_set(
-                            b"*\0".as_ptr() as *const core::ffi::c_char,
+                            c"*".as_ptr(),
                             esp_idf_sys::esp_log_level_t_ESP_LOG_WARN,
                         );
                     }
@@ -155,7 +155,7 @@ fn process_line(
                 "verbose" | "v" | "info" => {
                     unsafe {
                         esp_idf_sys::esp_log_level_set(
-                            b"*\0".as_ptr() as *const core::ffi::c_char,
+                            c"*".as_ptr(),
                             esp_idf_sys::esp_log_level_t_ESP_LOG_INFO,
                         );
                     }

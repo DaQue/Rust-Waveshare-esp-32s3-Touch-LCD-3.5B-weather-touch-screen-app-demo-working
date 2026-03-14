@@ -61,9 +61,8 @@ fn draw_wifi_signal(fb: &mut Framebuffer, x_right: i32, y_base: i32, rssi: Optio
     };
 
     let heights = [5i32, 8, 11, 14];
-    for i in 0..4usize {
+    for (i, &h) in heights.iter().enumerate() {
         let x = bars_x + i as i32 * (bar_w + bar_gap);
-        let h = heights[i];
         let color = if i < bars_active { rgb(100, 200, 100) } else { rgb(45, 55, 70) };
         let style = PrimitiveStyleBuilder::new().fill_color(color).build();
         Rectangle::new(Point::new(x, y_base - h), Size::new(bar_w as u32, h as u32))
