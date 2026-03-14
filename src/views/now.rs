@@ -183,9 +183,12 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
             const DIVIDER_X: i32 = 298;
 
             // Temp + trend (middle column)
-            Text::new(&temp_text, Point::new(106, card_top + 10), temp_style).draw(fb).ok();
+            // baseline=24 for PROFONT_24, so cell_top = baseline_y - 24; need cell_top >= 37 (inside border)
+            // card_top+34=70 → cell_top=46, 10px inside card top ✓
+            Text::new(&temp_text, Point::new(106, card_top + 34), temp_style).draw(fb).ok();
             let trend = outdoor_temp_trend(&state.outdoor_temp_history);
-            let triangle_x = 106 + temp_text.chars().count() as i32 * 14 + 10;
+            // PROFONT_24 char width = 16px
+            let triangle_x = 106 + temp_text.chars().count() as i32 * 16 + 10;
             draw_temp_trend(fb, trend, triangle_x, card_top + 24);
 
             // Feels like + condition
@@ -210,13 +213,15 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
             let ind_style_temp  = MonoTextStyle::new(&PROFONT_18_POINT, TEXT_PRIMARY);
             let ind_style_small = MonoTextStyle::new(&PROFONT_10_POINT, TEXT_TERTIARY);
 
-            Text::new("Indoor", Point::new(ind_x, card_top + 12), ind_style_label).draw(fb).ok();
+            // "Indoor": baseline=11 for PROFONT_12, cell_top = y-11; card_top+15=51 → cell_top=40 ✓
+            Text::new("Indoor", Point::new(ind_x, card_top + 15), ind_style_label).draw(fb).ok();
 
             if let Some(t) = state.indoor_temp {
                 let t_disp = if state.use_celsius { f_to_c(t) } else { t };
                 let unit_c = if state.use_celsius { "C" } else { "F" };
                 let t_text = format!("{:.1}°{}", t_disp, unit_c);
-                Text::new(&t_text, Point::new(ind_x, card_top + 30), ind_style_temp).draw(fb).ok();
+                // baseline=17 for PROFONT_18; "Indoor" cell_bottom=55; card_top+40=76 → cell_top=59, gap=4px ✓
+                Text::new(&t_text, Point::new(ind_x, card_top + 40), ind_style_temp).draw(fb).ok();
             }
             if let Some(h) = state.indoor_humidity {
                 let h_text = format!("{:.0}% RH", h);
@@ -257,16 +262,16 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
         1,
     );
 
-    let label_style = MonoTextStyle::new(&PROFONT_12_POINT, TEXT_HEADER);
-    Text::new("Forecast >", Point::new(CARD_MARGIN + 8, fc_top + 14), label_style)
-        .draw(fb)
-        .ok();
-
     if let Some(fc) = &state.forecast {
         let day_style  = MonoTextStyle::new(&PROFONT_10_POINT, TEXT_TERTIARY);
         let temp_style = MonoTextStyle::new(&PROFONT_14_POINT, TEXT_SECONDARY);
 
         if state.orientation.is_portrait() {
+            // "Forecast >" header only in portrait (landscape uses full-width columns)
+            let label_style = MonoTextStyle::new(&PROFONT_12_POINT, TEXT_HEADER);
+            Text::new("Forecast >", Point::new(CARD_MARGIN + 8, fc_top + 14), label_style)
+                .draw(fb)
+                .ok();
             let rows = 4i32;
             let row_h = (fc_h - 24).max(40) / rows;
             for (i, row) in fc.rows.iter().take(rows as usize).enumerate() {
