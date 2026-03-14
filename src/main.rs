@@ -1820,6 +1820,12 @@ fn main() -> Result<()> {
                 state.save_celsius_pref = false;
             }
         }
+        if state.save_orientation_pref {
+            if let Ok(mut nvs) = nvs.try_lock() {
+                let _ = config::Config::save_orientation_mode(&mut nvs, state.orientation_mode);
+                state.save_orientation_pref = false;
+            }
+        }
 
         // Check for force weather refresh from tap
         if state.force_weather_refresh {

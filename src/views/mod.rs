@@ -6,6 +6,7 @@ pub mod forecast;
 pub mod i2c_scan;
 pub mod wifi_scan;
 pub mod about;
+pub mod settings;
 pub mod warning;
 pub mod nav_menu;
 
@@ -38,6 +39,7 @@ pub enum View {
     I2cScan,
     WifiScan,
     About,
+    Settings,
     // Special
     NavMenu,
     Warning,
@@ -56,7 +58,8 @@ impl View {
             View::PressureHvac => None,
             View::I2cScan      => Some(View::WifiScan),
             View::WifiScan     => Some(View::About),
-            View::About        => None,
+            View::About        => Some(View::Settings),
+            View::Settings     => None,
             _                  => None,
         }
     }
@@ -69,6 +72,7 @@ impl View {
             View::PressureHvac => Some(View::Hvac),
             View::WifiScan     => Some(View::I2cScan),
             View::About        => Some(View::WifiScan),
+            View::Settings     => Some(View::About),
             _                  => None,
         }
     }
@@ -111,6 +115,7 @@ pub struct AppState {
     pub use_celsius: bool,
     pub weather_stale: bool,
     pub save_celsius_pref: bool,
+    pub save_orientation_pref: bool,
     pub force_weather_refresh: bool,
     pub warning_active: bool,
     pub warning_silenced_fingerprint: String,
@@ -155,6 +160,7 @@ impl AppState {
             use_celsius: false,
             weather_stale: false,
             save_celsius_pref: false,
+            save_orientation_pref: false,
             force_weather_refresh: false,
             warning_active: false,
             warning_silenced_fingerprint: String::new(),
@@ -418,6 +424,32 @@ impl AppState {
             }
         }
 
+        // ── Settings view taps ──
+        if self.current_view == View::Settings {
+            if let Some(action) = settings::hit_test(x, y, self.orientation) {
+                match action {
+                    settings::SettingsTap::TempF => {
+                        self.use_celsius = false;
+                        self.save_celsius_pref = true;
+                    }
+                    settings::SettingsTap::TempC => {
+                        self.use_celsius = true;
+                        self.save_celsius_pref = true;
+                    }
+                    settings::SettingsTap::OrientAuto => {
+                        self.orientation_mode = OrientationMode::Auto;
+                        self.save_orientation_pref = true;
+                    }
+                    settings::SettingsTap::OrientLandscape => {
+                        self.orientation_mode = OrientationMode::Landscape;
+                        self.save_orientation_pref = true;
+                    }
+                }
+                self.dirty = true;
+                return true;
+            }
+        }
+
         // ── Forecast view taps ──
         if self.current_view == View::Forecast {
             // Tap on daily row → open hourly drill-down
@@ -454,6 +486,7 @@ pub fn draw_current_view(fb: &mut Framebuffer, state: &AppState) {
         View::I2cScan    => i2c_scan::draw(fb, state),
         View::WifiScan   => wifi_scan::draw(fb, state),
         View::About      => about::draw(fb, state),
+        View::Settings   => settings::draw(fb, state),
         View::NavMenu    => nav_menu::draw(fb, state),
         View::Warning    => warning::draw(fb, state),
     }
