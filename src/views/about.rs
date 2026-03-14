@@ -31,10 +31,17 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
         CARD_FILL_INDOOR, CARD_BORDER_INDOOR, 1,
     );
 
+    let portrait = state.orientation.is_portrait();
     let label_style = MonoTextStyle::new(&PROFONT_14_POINT, TEXT_SECONDARY);
-    let value_style = MonoTextStyle::new(&PROFONT_14_POINT, TEXT_TERTIARY);
+    // Portrait: PROFONT_10 for values so "Waveshare ESP32-S3 3.5B" (23 chars)
+    // fits right of the label column (vx=100: 100 + 23*6 = 238 < 320).
+    let value_style = if portrait {
+        MonoTextStyle::new(&PROFONT_10_POINT, TEXT_TERTIARY)
+    } else {
+        MonoTextStyle::new(&PROFONT_14_POINT, TEXT_TERTIARY)
+    };
     let lx = CARD_MARGIN + 16;
-    let vx = if state.orientation.is_portrait() { 140 } else { 160 };
+    let vx = if portrait { 100 } else { 160 };
     let mut y = card_y + 26;
     let line_h = 26;
 
