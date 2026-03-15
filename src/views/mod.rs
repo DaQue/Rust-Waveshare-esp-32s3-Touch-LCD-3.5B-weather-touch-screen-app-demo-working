@@ -220,17 +220,13 @@ impl AppState {
                     self.dirty = true;
                     return true;
                 }
-                // Move to prev view within group, or open NavMenu at boundary
+                // Move to prev view within group, or open NavMenu at any boundary
                 if let Some(prev) = self.current_view.prev() {
                     self.current_view = prev;
                     self.forecast_hourly_open = false;
-                } else if self.current_view != View::Now {
-                    // At left edge of a non-home group → NavMenu
+                } else {
+                    // At left edge of any group (including Now) → NavMenu
                     self.current_view = View::NavMenu;
-                }
-                // SwipeRight on Now → About (quick health/uptime check)
-                if self.current_view == View::Now {
-                    self.current_view = View::About;
                 }
                 self.dirty = true;
                 true

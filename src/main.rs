@@ -1818,8 +1818,13 @@ fn main() -> Result<()> {
             state.dirty = true;
         }
 
-        // Trigger WiFi scan when user navigates to WifiScan view
-        if state.current_view == views::View::WifiScan && prev_view != views::View::WifiScan {
+        // Trigger WiFi scan when user navigates to WifiScan view.
+        // We only SET the flag here; execution is intentionally deferred to the
+        // NEXT tick so the render thread can draw "Scanning..." before the
+        // blocking scan freezes the main loop.
+        let wifi_scan_triggered_this_tick =
+            state.current_view == views::View::WifiScan && prev_view != views::View::WifiScan;
+        if wifi_scan_triggered_this_tick {
             state.wifi_networks.clear();
             state.wifi_scan_pending = true;
             debug_flags::REQUEST_WIFI_SCAN.store(true, Ordering::Relaxed);
@@ -1827,8 +1832,10 @@ fn main() -> Result<()> {
         }
         prev_view = state.current_view;
 
-        // WiFi scan execution
-        if debug_flags::REQUEST_WIFI_SCAN.swap(false, Ordering::Relaxed) {
+        // WiFi scan execution — skip if the flag was set THIS tick (defer one tick).
+        // Console-triggered scans (wifi scan command) bypass the trigger path so
+        // wifi_scan_triggered_this_tick is false and they run immediately as before.
+        if !wifi_scan_triggered_this_tick && debug_flags::REQUEST_WIFI_SCAN.swap(false, Ordering::Relaxed) {
             if let Some(wifi) = wifi_handle.as_mut() {
                 state.wifi_networks = wifi::scan_wifi(wifi.as_mut(), sysloop.clone());
             }
