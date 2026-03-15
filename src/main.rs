@@ -1370,6 +1370,13 @@ fn main() -> Result<()> {
                 // and the post-flush yield alone is too late if draw takes
                 // longer than the WDT timeout under PSRAM bus contention.
                 unsafe { esp_idf_sys::vTaskDelay(1) };
+                // If a realloc was skipped (DMA too low), fb_orientation still
+                // reflects the old dimensions.  Override snapshot.orientation so
+                // views render at the correct size and don't write out-of-bounds.
+                let mut snapshot = snapshot;
+                if snapshot.orientation != fb_orientation {
+                    snapshot.orientation = fb_orientation;
+                }
                 views::draw_current_view(&mut fb, &snapshot);
                 ctx.flush_fb(&fb, fb_orientation);
                 // Yield after flush as well (belt-and-suspenders).

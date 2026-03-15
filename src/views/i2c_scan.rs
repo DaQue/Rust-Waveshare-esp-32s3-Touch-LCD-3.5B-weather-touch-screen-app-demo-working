@@ -85,7 +85,7 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
 
     // Bottom nav hint
     let bottom_style = MonoTextStyle::new(&PROFONT_10_POINT, TEXT_BOTTOM);
-    Text::new("swipe <-- WiFi Scan  |  tap header for home", Point::new(12, screen_h - 12), bottom_style)
+    Text::new("swipe --> WiFi Scan  |  tap header for home", Point::new(12, screen_h - 12), bottom_style)
         .draw(fb)
         .ok();
 }

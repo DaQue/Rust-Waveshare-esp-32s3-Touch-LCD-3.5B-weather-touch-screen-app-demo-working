@@ -103,7 +103,7 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
     // Bottom hint
     let hint_style = MonoTextStyle::new(&PROFONT_10_POINT, TEXT_BOTTOM);
     Text::with_alignment(
-        "(swipe <-/-> to navigate  |  tap header for home)",
+        "swipe <-- WiFi Scan  |  tap header for home",
         Point::new(screen_w / 2, screen_h - 4),
         hint_style,
         Alignment::Center,

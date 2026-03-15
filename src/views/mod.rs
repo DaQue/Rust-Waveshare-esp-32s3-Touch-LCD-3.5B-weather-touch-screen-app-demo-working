@@ -56,9 +56,9 @@ impl View {
             View::Indoor       => Some(View::Hvac),
             View::Hvac         => Some(View::PressureHvac),
             View::PressureHvac => None,
-            View::I2cScan      => Some(View::WifiScan),
-            View::WifiScan     => Some(View::About),
-            View::About        => Some(View::Settings),
+            View::About        => Some(View::WifiScan),
+            View::WifiScan     => Some(View::I2cScan),
+            View::I2cScan      => Some(View::Settings),
             View::Settings     => None,
             _                  => None,
         }
@@ -70,9 +70,9 @@ impl View {
             View::Forecast     => Some(View::Now),
             View::Hvac         => Some(View::Indoor),
             View::PressureHvac => Some(View::Hvac),
-            View::WifiScan     => Some(View::I2cScan),
-            View::About        => Some(View::WifiScan),
-            View::Settings     => Some(View::About),
+            View::WifiScan     => Some(View::About),
+            View::I2cScan      => Some(View::WifiScan),
+            View::Settings     => Some(View::I2cScan),
             _                  => None,
         }
     }
@@ -319,7 +319,7 @@ impl AppState {
                 self.current_view = match group_tap {
                     nav_menu::NavTap::Weather => View::Now,
                     nav_menu::NavTap::Sensors => View::Indoor,
-                    nav_menu::NavTap::System  => View::I2cScan,
+                    nav_menu::NavTap::System  => View::About,
                 };
                 self.forecast_hourly_open = false;
                 self.dirty = true;
