@@ -1863,6 +1863,16 @@ fn main() -> Result<()> {
             if let Ok(mut nvs) = nvs.try_lock() {
                 let _ = config::Config::save_orientation_mode(&mut nvs, state.orientation_mode);
                 state.save_orientation_pref = false;
+                // Apply the new orientation immediately (Settings tap only saves pref;
+                // without this the display would not rotate until reboot).
+                if state.orientation_mode != config::OrientationMode::Auto {
+                    let target = locked_orientation(state.orientation_mode, state.orientation_flip);
+                    if state.orientation != target {
+                        apply_orientation(&mut state, target);
+                        last_orientation_change_ms = now_ms();
+                        info!("Orientation locked to {:?}", state.orientation);
+                    }
+                }
             }
         }
 
