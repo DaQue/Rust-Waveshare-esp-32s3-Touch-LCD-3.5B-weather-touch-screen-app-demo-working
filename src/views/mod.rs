@@ -374,15 +374,13 @@ impl AppState {
         }
 
         // ── Alert overlay close tap ──
-        // Must come before Now-view handlers so tapping the overlay doesn't
-        // accidentally navigate to Forecast or toggle temp units.
+        // Any tap while the overlay is open closes it.  This comes before all
+        // other Now-view handlers so tapping the icon area (y < overlay_y)
+        // can't toggle now_alerts_open back off in the same gesture.
         if self.current_view == View::Now && self.now_alerts_open {
-            let overlay_y = if self.orientation.is_portrait() { 224i16 } else { 190i16 };
-            if y >= overlay_y {
-                self.now_alerts_open = false;
-                self.dirty = true;
-                return true;
-            }
+            self.now_alerts_open = false;
+            self.dirty = true;
+            return true;
         }
 
         // ── NOW view taps ──

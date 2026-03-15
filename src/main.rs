@@ -1308,7 +1308,7 @@ fn main() -> Result<()> {
 
     std::thread::Builder::new()
         .name("render".into())
-        .stack_size(16384)
+        .stack_size(24576)
         .spawn(move || {
             let mut current_orientation = layout::Orientation::Landscape;
             // fb_orientation tracks the actual framebuffer pixel dimensions so

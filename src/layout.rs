@@ -125,6 +125,16 @@ use crate::framebuffer::Framebuffer;
 use embedded_graphics::primitives::{PrimitiveStyleBuilder, Rectangle, RoundedRectangle};
 
 /// Word-wrap `text` to lines of at most `max_chars` characters.
+/// Return the byte index after the first `n` chars of `s`, or `s.len()` if shorter.
+fn char_byte_offset(s: &str, n: usize) -> usize {
+    s.char_indices().nth(n).map(|(i, _)| i).unwrap_or(s.len())
+}
+
+/// Number of Unicode scalar values in `s` (char count, not byte length).
+fn char_count(s: &str) -> usize {
+    s.chars().count()
+}
+
 pub fn word_wrap(text: &str, max_chars: usize) -> Vec<String> {
     let mut lines = Vec::new();
     for paragraph in text.split('\n') {
@@ -135,24 +145,28 @@ pub fn word_wrap(text: &str, max_chars: usize) -> Vec<String> {
         }
         let mut line = String::new();
         for word in paragraph.split_whitespace() {
+            let word_chars = char_count(word);
+            let line_chars = char_count(&line);
             if line.is_empty() {
-                if word.len() > max_chars {
+                if word_chars > max_chars {
                     let mut remaining = word;
-                    while remaining.len() > max_chars {
-                        lines.push(remaining[..max_chars].to_string());
-                        remaining = &remaining[max_chars..];
+                    while char_count(remaining) > max_chars {
+                        let end = char_byte_offset(remaining, max_chars);
+                        lines.push(remaining[..end].to_string());
+                        remaining = &remaining[end..];
                     }
                     line = remaining.to_string();
                 } else {
                     line = word.to_string();
                 }
-            } else if line.len() + 1 + word.len() > max_chars {
+            } else if line_chars + 1 + word_chars > max_chars {
                 lines.push(line);
-                if word.len() > max_chars {
+                if word_chars > max_chars {
                     let mut remaining = word;
-                    while remaining.len() > max_chars {
-                        lines.push(remaining[..max_chars].to_string());
-                        remaining = &remaining[max_chars..];
+                    while char_count(remaining) > max_chars {
+                        let end = char_byte_offset(remaining, max_chars);
+                        lines.push(remaining[..end].to_string());
+                        remaining = &remaining[end..];
                     }
                     line = remaining.to_string();
                 } else {

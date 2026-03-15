@@ -419,12 +419,23 @@ fn draw_alert_overlay(fb: &mut Framebuffer, state: &AppState, screen_w: i32, scr
         let raw = raw.trim();
         if !raw.starts_with('*') { continue; }
         let content = raw.trim_start_matches('*').trim();
-        let line = if content.len() + 2 > max_chars {
-            format!("- {}...", &content[..max_chars.saturating_sub(5)])
+        // Draw "- " prefix and content as separate draws to avoid format! in the
+        // hot render path.  Use char-aware truncation to avoid panicking on
+        // multi-byte UTF-8 characters (degree signs, smart quotes, em-dashes).
+        let char_limit = max_chars.saturating_sub(2); // reserve "- "
+        let content_chars = content.chars().count();
+        if content_chars <= char_limit {
+            Text::new("- ", Point::new(CARD_MARGIN + 8, row_y), dim_style).draw(fb).ok();
+            Text::new(content, Point::new(CARD_MARGIN + 8 + 12, row_y), dim_style).draw(fb).ok();
         } else {
-            format!("- {}", content)
-        };
-        Text::new(&line, Point::new(CARD_MARGIN + 8, row_y), dim_style).draw(fb).ok();
+            let end = content.char_indices()
+                .nth(char_limit.saturating_sub(3))
+                .map(|(i, _)| i)
+                .unwrap_or(content.len());
+            Text::new("- ", Point::new(CARD_MARGIN + 8, row_y), dim_style).draw(fb).ok();
+            Text::new(&content[..end], Point::new(CARD_MARGIN + 8 + 12, row_y), dim_style).draw(fb).ok();
+            Text::new("...", Point::new(CARD_MARGIN + 8 + 12 + (char_limit as i32 - 3) * 6, row_y), dim_style).draw(fb).ok();
+        }
         row_y += line_h;
     }
 
