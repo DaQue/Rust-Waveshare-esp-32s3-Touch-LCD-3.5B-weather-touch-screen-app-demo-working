@@ -17,6 +17,7 @@ pub enum SettingsTap {
     TempC,
     OrientAuto,
     OrientLandscape,
+    OrientPortrait,
 }
 
 // Button layout constants (same for portrait and landscape — we adapt widths to screen_w).
@@ -26,16 +27,23 @@ const ROW2_Y: i32 = 160;
 const BTN_H: i32 = 50;
 const BTN_GAP: i32 = 12;
 
-/// Returns (x, y, w, h) for the four option buttons.
-fn button_rects(screen_w: i32) -> [(i32, i32, i32, i32); 4] {
-    let btn_w = (screen_w - 2 * CARD_MARGIN - BTN_GAP) / 2;
+/// Returns (x, y, w, h) for the five option buttons.
+/// Indices 0-1: °F, °C  (2 equal buttons)
+/// Indices 2-4: Auto, Landscape, Portrait  (3 equal buttons)
+fn button_rects(screen_w: i32) -> [(i32, i32, i32, i32); 5] {
+    let btn2_w = (screen_w - 2 * CARD_MARGIN - BTN_GAP) / 2;
+    let btn3_w = (screen_w - 2 * CARD_MARGIN - 2 * BTN_GAP) / 3;
     let bx0 = CARD_MARGIN;
-    let bx1 = CARD_MARGIN + btn_w + BTN_GAP;
+    let bx1 = CARD_MARGIN + btn2_w + BTN_GAP;
+    let bx2 = CARD_MARGIN;
+    let bx3 = CARD_MARGIN + btn3_w + BTN_GAP;
+    let bx4 = CARD_MARGIN + 2 * (btn3_w + BTN_GAP);
     [
-        (bx0, ROW1_Y, btn_w, BTN_H),  // °F
-        (bx1, ROW1_Y, btn_w, BTN_H),  // °C
-        (bx0, ROW2_Y, btn_w, BTN_H),  // Auto
-        (bx1, ROW2_Y, btn_w, BTN_H),  // Landscape
+        (bx0, ROW1_Y, btn2_w, BTN_H),  // °F
+        (bx1, ROW1_Y, btn2_w, BTN_H),  // °C
+        (bx2, ROW2_Y, btn3_w, BTN_H),  // Auto
+        (bx3, ROW2_Y, btn3_w, BTN_H),  // Landscape
+        (bx4, ROW2_Y, btn3_w, BTN_H),  // Portrait
     ]
 }
 
@@ -45,7 +53,7 @@ pub fn hit_test(x: i16, y: i16, orientation: Orientation) -> Option<SettingsTap>
     let rects = button_rects(screen_w);
     let actions = [
         SettingsTap::TempF, SettingsTap::TempC,
-        SettingsTap::OrientAuto, SettingsTap::OrientLandscape,
+        SettingsTap::OrientAuto, SettingsTap::OrientLandscape, SettingsTap::OrientPortrait,
     ];
     for (i, (bx, by, bw, bh)) in rects.iter().enumerate() {
         if x >= *bx as i16 && x < (*bx + *bw) as i16
@@ -63,7 +71,7 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
     draw_hline(fb, HEADER_LINE_Y, LINE_COLOR_1);
 
     let header_style = MonoTextStyle::new(&PROFONT_14_POINT, TEXT_HEADER);
-    Text::new("\u{2699} Settings", Point::new(14, 24), header_style)
+    Text::new("Settings", Point::new(14, 24), header_style)
         .draw(fb).ok();
 
     let rects = button_rects(screen_w);
@@ -86,7 +94,7 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
         };
         draw_card(fb, bx, by, bw, bh, 8, fill, border, 1);
         let cx = bx + bw / 2;
-        let cy = by + bh / 2 + 7;  // PROFONT_18 baseline=17; cy+7-17=cy-10 = middle
+        let cy = by + bh / 2 + 7;
         Text::with_alignment(label, Point::new(cx, cy), btn_style, Alignment::Center)
             .draw(fb).ok();
         if i == active_temp {
@@ -99,8 +107,12 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
     Text::new("Orientation", Point::new(CARD_MARGIN, ROW2_Y - 16), section_style)
         .draw(fb).ok();
 
-    let labels_orient = ["Auto", "Landscape"];
-    let active_orient = if state.orientation_mode == OrientationMode::Landscape { 1 } else { 0 };
+    let labels_orient = ["Auto", "Landscape", "Portrait"];
+    let active_orient = match state.orientation_mode {
+        OrientationMode::Auto      => 0,
+        OrientationMode::Landscape => 1,
+        OrientationMode::Portrait  => 2,
+    };
     for (i, label) in labels_orient.iter().enumerate() {
         let (bx, by, bw, bh) = rects[i + 2];
         let (fill, border) = if i == active_orient {

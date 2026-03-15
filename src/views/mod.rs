@@ -440,6 +440,10 @@ impl AppState {
                         self.orientation_mode = OrientationMode::Landscape;
                         self.save_orientation_pref = true;
                     }
+                    settings::SettingsTap::OrientPortrait => {
+                        self.orientation_mode = OrientationMode::Portrait;
+                        self.save_orientation_pref = true;
+                    }
                 }
                 self.dirty = true;
                 return true;
