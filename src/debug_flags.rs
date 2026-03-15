@@ -20,6 +20,11 @@ pub static REQUEST_SILENCE_WARNING: AtomicBool = AtomicBool::new(false);
 pub static REQUEST_TEST_WARNING: AtomicBool = AtomicBool::new(false);
 pub static REQUEST_HISTORY_SAVE: AtomicBool = AtomicBool::new(false);
 
+/// Set by the render thread during LCD DMA flush, cleared when flush completes.
+/// The main loop checks this before doing NVS flash writes to avoid disabling
+/// the flash cache while a DMA ISR may be executing from flash (IWDT risk).
+pub static RENDER_FLUSH_ACTIVE: AtomicBool = AtomicBool::new(false);
+
 pub fn is_on(flag: &AtomicBool) -> bool {
     flag.load(Ordering::Relaxed)
 }

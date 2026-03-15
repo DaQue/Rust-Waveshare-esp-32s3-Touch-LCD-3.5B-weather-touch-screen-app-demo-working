@@ -5,6 +5,8 @@ use std::io::{self, Read};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
+static DEV_HELP: AtomicBool = AtomicBool::new(false);
+
 use crate::config::Config;
 
 pub fn spawn_console(
@@ -80,7 +82,21 @@ fn process_line(
     let rest = parts.next().unwrap_or("").trim();
 
     match cmd {
-        "help" | "?" => print_help(),
+        "help" | "?" => {
+            let dev = sub == "developer" || sub == "dev";
+            if dev {
+                match rest {
+                    "on"  => { DEV_HELP.store(true,  Ordering::Relaxed); info!("developer help: ON  (type 'help' to see all commands)"); return Ok(()); }
+                    "off" => { DEV_HELP.store(false, Ordering::Relaxed); info!("developer help: OFF"); return Ok(()); }
+                    _ => {}
+                }
+            }
+            if DEV_HELP.load(Ordering::Relaxed) || dev {
+                print_help_full();
+            } else {
+                print_help_user();
+            }
+        }
         "wifi" => handle_wifi(sub, rest, nvs, config)?,
         "api" => handle_api(sub, rest, nvs, config, weather_refresh_flag)?,
         "units" => handle_units(sub, nvs, config)?,
@@ -178,48 +194,54 @@ fn process_line(
     Ok(())
 }
 
-fn print_help() {
+fn print_help_user() {
     info!("commands:");
-    info!("  [Basics]");
-    info!("  help                       - show this help");
-    info!("  status                     - show system status");
-    info!("  about                      - show firmware/device summary");
-    info!("  version                    - print firmware version");
-    info!("  reboot                     - reboot device");
-    info!("  history save               - save sensor history to NVS now");
-    info!("  log quiet | log verbose    - set log level (quiet=WARN, verbose=INFO)");
-    info!("  [Wi-Fi / API]");
-    info!("  wifi show                  - show Wi-Fi config");
+    info!("  [Setup]");
     info!("  wifi set <ssid> <pass>     - set Wi-Fi credentials");
+    info!("  wifi show                  - show Wi-Fi config");
     info!("  wifi scan                  - scan for nearby networks");
-    info!("  wifi clear                 - clear Wi-Fi override");
-    info!("  api show                   - show API config");
     info!("  api set-key <key>          - set OpenWeather API key");
     info!("  api set-query <query>      - set location query");
-    info!("  api clear                  - clear API overrides");
-    info!("  secrets show               - show local fallback availability");
-    info!("  secrets seed-local         - save wifi.local.rs values into NVS");
+    info!("  api show                   - show API config");
     info!("  units f|c|show             - set/show temperature units");
+    info!("  [Display]");
+    info!("  orientation auto|landscape|portrait");
+    info!("  orientation flip on|off|toggle|show");
     info!("  [Alerts]");
     info!("  alerts show                - show alert settings");
     info!("  alerts on|off              - enable/disable NWS alerts");
     info!("  alerts beep on|off|show    - enable/disable alert beeps");
     info!("  alerts auto-scope on|off   - auto-discover NWS zone from Wi-Fi");
-    info!("  alerts ua <user-agent>     - set NWS User-Agent");
-    info!("  alerts scope <scope>       - set NWS scope (example: area=MO)");
-    info!("  alerts zone show|clear     - show/clear cached zone");
     info!("  alerts test warning        - inject fake warning for testing");
-    info!("  [Hardware / Diagnostics]");
+    info!("  [System]");
+    info!("  status                     - show system status");
+    info!("  about                      - show firmware/device summary");
+    info!("  reboot                     - reboot device");
+    info!("  history save               - save sensor history to NVS now");
+    info!("  help                       - show this help");
+    info!("  (type 'help developer on' to show developer commands)");
+}
+
+fn print_help_full() {
+    print_help_user();
+    info!("  [Developer / Diagnostics]");
+    info!("  version                    - print firmware version");
+    info!("  log quiet | log verbose    - set log level (quiet=WARN, verbose=INFO)");
+    info!("  wifi clear                 - clear Wi-Fi override");
+    info!("  api clear                  - clear API overrides");
+    info!("  secrets show               - show local fallback availability");
+    info!("  secrets seed-local         - save wifi.local.rs values into NVS");
+    info!("  alerts ua <user-agent>     - set NWS User-Agent (author contact)");
+    info!("  alerts scope <scope>       - set NWS scope (example: area=MO)");
+    info!("  alerts zone show|clear     - show/clear cached NWS zone");
     info!("  imu read                   - one-shot IMU reading");
     info!("  i2c scan                   - rescan I2C bus");
-    info!("  debug <module>|on|off      - toggle/set debug logging");
+    info!("  debug <module>|on|off|show - toggle per-module debug logging");
     info!("    modules: touch, bme280, wifi, weather, imu, all");
-    info!("  debug show                 - show debug flag status");
-    info!("  beep advisory|watch|warning|stop - play/stop speaker test tone");
+    info!("  beep advisory|watch|warning|stop - speaker test tone");
     info!("  flash show                 - show flash metadata");
     info!("  flash set-time <text>      - set flash time metadata");
-    info!("  orientation auto|landscape|portrait");
-    info!("  orientation flip on|off|toggle|show");
+    info!("  help developer off         - hide developer commands again");
 }
 
 fn handle_beep(sub: &str) {
@@ -494,7 +516,7 @@ fn handle_wifi(
             cfg.wifi_pass.clear();
             info!("Wi-Fi override cleared");
         }
-        _ => print_help(),
+        _ => print_help_user(),
     }
     Ok(())
 }
@@ -560,7 +582,7 @@ fn handle_api(
             weather_refresh_flag.store(true, Ordering::Relaxed);
             info!("weather refresh requested");
         }
-        _ => print_help(),
+        _ => print_help_user(),
     }
     Ok(())
 }

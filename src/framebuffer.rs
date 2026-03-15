@@ -100,6 +100,7 @@ impl Framebuffer {
             need_w,
             need_h
         );
+        crate::debug_flags::RENDER_FLUSH_ACTIVE.store(true, std::sync::atomic::Ordering::Release);
         match orientation {
             crate::layout::Orientation::Landscape => self.flush_landscape_rotated(io, panel),
             crate::layout::Orientation::LandscapeFlipped => {
@@ -110,6 +111,7 @@ impl Framebuffer {
                 self.flush_portrait_direct_flipped(io, panel)
             }
         }
+        crate::debug_flags::RENDER_FLUSH_ACTIVE.store(false, std::sync::atomic::Ordering::Release);
     }
 
     fn flush_landscape_rotated(

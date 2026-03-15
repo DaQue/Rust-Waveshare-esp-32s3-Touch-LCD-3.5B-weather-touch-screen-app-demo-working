@@ -35,7 +35,7 @@ const DEFAULT_ALERTS_BEEP: bool = true;
 const DEFAULT_ALERTS_AUTO_SCOPE: bool = true;
 const DEFAULT_FLASH_TIME: &str = "unknown";
 const DEFAULT_NWS_USER_AGENT: &str =
-    concat!("waveshare_esp32-s3-touch-lcd-3p5b/", env!("CARGO_PKG_VERSION"), " (contact: unset)");
+    concat!("waveshare_esp32-s3-touch-lcd-3p5b/", env!("CARGO_PKG_VERSION"), " (davideq@gmail.com)");
 const DEFAULT_NWS_SCOPE: &str = "area=MO";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

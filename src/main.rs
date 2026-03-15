@@ -1467,7 +1467,15 @@ fn main() -> Result<()> {
         }
 
         // Periodic NVS history save (every 30 min) so data survives unexpected resets.
+        // Wait for render flush to complete first: NVS writes disable the flash cache
+        // on CPU1 via IPC; if the render thread's DMA ISR is executing from flash at
+        // that moment, the IPC pause times out and fires the Interrupt WDT.
         if t.wrapping_sub(last_nvs_save_ms) >= 30 * 60 * 1_000 {
+            let mut waited = 0u32;
+            while debug_flags::RENDER_FLUSH_ACTIVE.load(Ordering::Acquire) && waited < 500 {
+                unsafe { esp_idf_sys::vTaskDelay(1) };
+                waited += 1;
+            }
             history_nvs_save(&state, &nvs);
             last_nvs_save_ms = t;
         }
@@ -1475,6 +1483,11 @@ fn main() -> Result<()> {
         // Manual history save requested from console (`history save`).
         if debug_flags::REQUEST_HISTORY_SAVE.swap(false, Ordering::Relaxed) {
             log::info!("console: manual history save requested");
+            let mut waited = 0u32;
+            while debug_flags::RENDER_FLUSH_ACTIVE.load(Ordering::Acquire) && waited < 500 {
+                unsafe { esp_idf_sys::vTaskDelay(1) };
+                waited += 1;
+            }
             history_nvs_save(&state, &nvs);
             last_nvs_save_ms = t; // reset periodic timer too
             log::info!("console: history save complete");
