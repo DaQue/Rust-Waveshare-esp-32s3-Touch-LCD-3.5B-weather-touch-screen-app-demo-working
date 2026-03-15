@@ -85,8 +85,14 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
     draw_hline(fb, HEADER_LINE_Y, LINE_COLOR_1);
 
     // Header: time (left), city (center), status (right)
-    let header_style = MonoTextStyle::new(&PROFONT_14_POINT, TEXT_HEADER);
-    Text::new(&state.time_text, Point::new(10, 24), header_style)
+    // In portrait (320px wide) PROFONT_14 "12:34 PM" = 72px and city can start
+    // at ~70px → use PROFONT_12 (7px/char → 56px) to avoid overlap.
+    let time_style = if state.orientation.is_portrait() {
+        MonoTextStyle::new(&PROFONT_12_POINT, TEXT_HEADER)
+    } else {
+        MonoTextStyle::new(&PROFONT_14_POINT, TEXT_HEADER)
+    };
+    Text::new(&state.time_text, Point::new(10, 24), time_style)
         .draw(fb)
         .ok();
 

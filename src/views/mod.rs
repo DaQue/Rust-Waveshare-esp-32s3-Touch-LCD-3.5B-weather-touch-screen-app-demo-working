@@ -373,6 +373,18 @@ impl AppState {
             }
         }
 
+        // ── Alert overlay close tap ──
+        // Must come before Now-view handlers so tapping the overlay doesn't
+        // accidentally navigate to Forecast or toggle temp units.
+        if self.current_view == View::Now && self.now_alerts_open {
+            let overlay_y = if self.orientation.is_portrait() { 224i16 } else { 190i16 };
+            if y >= overlay_y {
+                self.now_alerts_open = false;
+                self.dirty = true;
+                return true;
+            }
+        }
+
         // ── NOW view taps ──
         if self.current_view == View::Now {
             let (temp_x0, temp_x1, temp_y0, temp_y1) = match self.orientation {
