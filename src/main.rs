@@ -1311,6 +1311,12 @@ fn main() -> Result<()> {
         .stack_size(16384)
         .spawn(move || {
             let mut current_orientation = layout::Orientation::Landscape;
+            // fb_orientation tracks the actual framebuffer pixel dimensions so
+            // flush_to_panel always receives an orientation that matches the FB.
+            // It diverges from current_orientation when a realloc is skipped due
+            // to low DMA memory — in that case we keep flushing with the old
+            // orientation until a realloc succeeds.
+            let mut fb_orientation = layout::Orientation::Landscape;
             loop {
                 let snapshot = match render_rx.recv() {
                     Ok(s) => s,
@@ -1335,8 +1341,8 @@ fn main() -> Result<()> {
                         // Framebuffer::new() allocates a 12.5 KB DMA buffer; if the
                         // largest free DMA block is too small the assert inside will
                         // panic and crash the render thread.  Skip the realloc and
-                        // keep the current framebuffer — the view will render at the
-                        // wrong dimensions until the next successful realloc.
+                        // keep the current framebuffer — flush uses fb_orientation
+                        // (the old orientation) until a realloc eventually succeeds.
                         let dma_free = unsafe {
                             esp_idf_sys::heap_caps_get_largest_free_block(
                                 esp_idf_sys::MALLOC_CAP_DMA,
@@ -1344,12 +1350,18 @@ fn main() -> Result<()> {
                         };
                         if dma_free >= 15_000 {
                             fb = framebuffer::Framebuffer::new(w, h);
+                            fb_orientation = snapshot.orientation;
                         } else {
                             log::warn!(
                                 "orientation change: skipping FB realloc — DMA free only {} bytes",
                                 dma_free
                             );
+                            // fb_orientation intentionally NOT updated: FB still has
+                            // old dimensions, flush must use the old orientation.
                         }
+                    } else {
+                        // Same pixel dimensions (e.g. Landscape <-> LandscapeFlipped).
+                        fb_orientation = snapshot.orientation;
                     }
                     current_orientation = snapshot.orientation;
                 }
@@ -1359,7 +1371,7 @@ fn main() -> Result<()> {
                 // longer than the WDT timeout under PSRAM bus contention.
                 unsafe { esp_idf_sys::vTaskDelay(1) };
                 views::draw_current_view(&mut fb, &snapshot);
-                ctx.flush_fb(&fb, snapshot.orientation);
+                ctx.flush_fb(&fb, fb_orientation);
                 // Yield after flush as well (belt-and-suspenders).
                 unsafe { esp_idf_sys::vTaskDelay(1) };
             }
