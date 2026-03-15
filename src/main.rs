@@ -1872,6 +1872,10 @@ fn main() -> Result<()> {
                         last_orientation_change_ms = now_ms();
                         info!("Orientation locked to {:?}", state.orientation);
                     }
+                } else {
+                    // Switching back to Auto: expire the cooldown so IMU kicks in
+                    // immediately instead of blocking for 10s.
+                    last_orientation_change_ms = 0;
                 }
             }
         }

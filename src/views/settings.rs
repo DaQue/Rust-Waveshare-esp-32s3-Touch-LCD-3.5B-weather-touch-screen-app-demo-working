@@ -97,10 +97,11 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
     Text::new("Orientation", Point::new(CARD_MARGIN, ROW2_Y - 16), section_style)
         .draw(fb).ok();
 
-    // Toggle label shows where you'll GO next:
-    //   Auto or Portrait → shows "Landscape"  (tap to lock landscape)
-    //   Landscape        → shows "Portrait"   (tap to switch to portrait)
-    let toggle_label = if state.orientation_mode == OrientationMode::Landscape {
+    // Toggle label shows the CURRENT lock state so the highlighted button is
+    // always accurate.  Tapping it cycles Landscape ↔ Portrait.
+    //   Auto or Landscape → shows "Landscape"
+    //   Portrait          → shows "Portrait"
+    let toggle_label = if state.orientation_mode == OrientationMode::Portrait {
         "Portrait"
     } else {
         "Landscape"
@@ -139,7 +140,7 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
         .draw(fb).ok();
 
     Text::with_alignment(
-        "(swipe <-/-> or tap header to navigate)",
+        "swipe <-- About  |  hold = menu",
         Point::new(screen_w / 2, screen_h - 4),
         hint_style,
         Alignment::Center,

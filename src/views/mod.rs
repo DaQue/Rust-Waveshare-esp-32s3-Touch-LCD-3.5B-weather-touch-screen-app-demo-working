@@ -56,10 +56,10 @@ impl View {
             View::Indoor       => Some(View::Hvac),
             View::Hvac         => Some(View::PressureHvac),
             View::PressureHvac => None,
+            View::Settings     => Some(View::About),
             View::About        => Some(View::WifiScan),
             View::WifiScan     => Some(View::I2cScan),
-            View::I2cScan      => Some(View::Settings),
-            View::Settings     => None,
+            View::I2cScan      => None,
             _                  => None,
         }
     }
@@ -70,9 +70,9 @@ impl View {
             View::Forecast     => Some(View::Now),
             View::Hvac         => Some(View::Indoor),
             View::PressureHvac => Some(View::Hvac),
+            View::About        => Some(View::Settings),
             View::WifiScan     => Some(View::About),
             View::I2cScan      => Some(View::WifiScan),
-            View::Settings     => Some(View::I2cScan),
             _                  => None,
         }
     }
@@ -252,6 +252,18 @@ impl AppState {
                 }
             }
 
+            Gesture::LongPress => {
+                // Long press from anywhere → NavMenu (except already there or home)
+                if self.current_view != View::NavMenu && self.current_view != View::Now {
+                    self.current_view = View::NavMenu;
+                    self.forecast_hourly_open = false;
+                    self.dirty = true;
+                    true
+                } else {
+                    false
+                }
+            }
+
             Gesture::Tap { x, y } => self.handle_tap(x, y),
         }
     }
@@ -273,7 +285,7 @@ impl AppState {
                     false
                 }
             }
-            Gesture::SwipeLeft | Gesture::SwipeRight => {
+            Gesture::SwipeLeft | Gesture::SwipeRight | Gesture::LongPress => {
                 if !self.warning_active {
                     // Already silenced — allow exit
                     self.current_view = View::Now;
@@ -319,7 +331,7 @@ impl AppState {
                 self.current_view = match group_tap {
                     nav_menu::NavTap::Weather => View::Now,
                     nav_menu::NavTap::Sensors => View::Indoor,
-                    nav_menu::NavTap::System  => View::About,
+                    nav_menu::NavTap::System  => View::Settings,
                 };
                 self.forecast_hourly_open = false;
                 self.dirty = true;

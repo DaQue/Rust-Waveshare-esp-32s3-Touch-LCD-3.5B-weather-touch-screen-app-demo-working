@@ -208,30 +208,29 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
             let ind_style_temp  = MonoTextStyle::new(&PROFONT_18_POINT, TEXT_PRIMARY);
             let ind_style_small = MonoTextStyle::new(&PROFONT_10_POINT, TEXT_TERTIARY);
 
-            // "Indoor": baseline=14 for PROFONT_14, cell_top = y-14; card_top+15=51 → cell_top=37 ✓
-            Text::new("Indoor", Point::new(ind_x, card_top + 15), ind_style_label).draw(fb).ok();
+            // "Indoor": push down to card_top+22 so text top aligns with icon top (card_top+8)
+            Text::new("Indoor", Point::new(ind_x, card_top + 22), ind_style_label).draw(fb).ok();
 
             if let Some(t) = state.indoor_temp {
                 let t_disp = if state.use_celsius { f_to_c(t) } else { t };
                 let unit_c = if state.use_celsius { "C" } else { "F" };
                 let t_text = format!("{:.1}°{}", t_disp, unit_c);
-                // baseline=17 for PROFONT_18; "Indoor" cell_bottom=55; card_top+40=76 → cell_top=59, gap=4px ✓
-                Text::new(&t_text, Point::new(ind_x, card_top + 40), ind_style_temp).draw(fb).ok();
+                Text::new(&t_text, Point::new(ind_x, card_top + 47), ind_style_temp).draw(fb).ok();
             }
             if let Some(h) = state.indoor_humidity {
                 let h_text = format!("{:.0}% RH", h);
-                Text::new(&h_text, Point::new(ind_x, card_top + 72), ind_style_small).draw(fb).ok();
+                Text::new(&h_text, Point::new(ind_x, card_top + 79), ind_style_small).draw(fb).ok();
             }
             if let Some(p) = state.indoor_pressure {
                 let correction = state.pressure_history.delta_owm_bme_stable().unwrap_or(0.0);
                 let p_text = format!("{:.1} hPa", p + correction);
-                Text::new(&p_text, Point::new(ind_x, card_top + 88), ind_style_small).draw(fb).ok();
+                Text::new(&p_text, Point::new(ind_x, card_top + 95), ind_style_small).draw(fb).ok();
             }
             // Pressure trend indicator (3h/1h/30m)
             if let Some((delta, label)) = state.pressure_history.pressure_trend() {
                 let sign = if delta >= 0.0 { "+" } else { "" };
                 let trend_text = format!("{}: {}{:.1}", label, sign, delta);
-                Text::new(&trend_text, Point::new(ind_x, card_top + 104), ind_style_small)
+                Text::new(&trend_text, Point::new(ind_x, card_top + 111), ind_style_small)
                     .draw(fb).ok();
             }
         }

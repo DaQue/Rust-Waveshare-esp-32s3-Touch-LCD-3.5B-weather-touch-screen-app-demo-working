@@ -25,11 +25,13 @@ const TOUCH_SWIPE_MIN_Y_PX: i32 = 48;
 const TOUCH_SWIPE_COOLDOWN_MS: u32 = 300;
 const TOUCH_TAP_COOLDOWN_MS: u32 = 500;
 const TOUCH_TAP_MAX_MOVE_PX: i32 = 18;
+const TOUCH_LONG_PRESS_MS: u32 = 600;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Gesture {
     None,
     Tap { x: i16, y: i16 },
+    LongPress,
     SwipeLeft,
     SwipeRight,
     SwipeUp,
@@ -45,6 +47,8 @@ pub struct TouchState {
     start_y: i16,
     last_x: i16,
     last_y: i16,
+    press_start_ms: u32,
+    long_press_fired: bool,
     last_swipe_ms: u32,
     last_tap_ms: u32,
     poll_count: u32,
@@ -61,6 +65,8 @@ impl TouchState {
             start_y: 0,
             last_x: 0,
             last_y: 0,
+            press_start_ms: 0,
+            long_press_fired: false,
             last_swipe_ms: 0,
             last_tap_ms: 0,
             poll_count: 0,
@@ -103,9 +109,22 @@ impl TouchState {
                     self.pressed = true;
                     self.start_x = x;
                     self.start_y = y;
+                    self.press_start_ms = now_ms;
+                    self.long_press_fired = false;
                     dbg_touch!("TOUCH down at ({}, {}) (confirmed after {} polls)", x, y, self.confirm_count);
                 } else {
                     dbg_touch!("TOUCH pending confirm ({}/3) at ({}, {})", self.confirm_count, x, y);
+                }
+            } else if !self.long_press_fired {
+                // Check for long press while finger is still held
+                let dx = (x as i32 - self.start_x as i32).abs();
+                let dy = (y as i32 - self.start_y as i32).abs();
+                if dx <= TOUCH_TAP_MAX_MOVE_PX && dy <= TOUCH_TAP_MAX_MOVE_PX
+                    && now_ms.wrapping_sub(self.press_start_ms) >= TOUCH_LONG_PRESS_MS
+                {
+                    self.long_press_fired = true;
+                    dbg_touch!("TOUCH -> LongPress");
+                    return Gesture::LongPress;
                 }
             }
             self.last_x = x;
@@ -122,6 +141,12 @@ impl TouchState {
 
         // Finger released - classify gesture
         self.pressed = false;
+
+        // Long press already consumed this touch — suppress tap/swipe on release
+        if self.long_press_fired {
+            self.long_press_fired = false;
+            return Gesture::None;
+        }
 
         let dx = self.last_x as i32 - self.start_x as i32;
         let dy = self.last_y as i32 - self.start_y as i32;
