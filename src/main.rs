@@ -91,9 +91,9 @@ const WIFI_DEBUG_TICKS: u32 = 100; // every 10 seconds
 const ORIENTATION_POLL_TICKS: u32 = 2; // every 200ms
 const ORIENTATION_SWITCH_MARGIN_G: f32 = 0.25; // one axis must dominate by this much
 const ORIENTATION_MAX_Z_G: f32 = 0.90;         // bail if nearly flat (z > 0.9g)
-const ORIENTATION_MIN_AXIS_G: f32 = 0.70;      // dominant axis needs deliberate tilt
-const ORIENTATION_CONFIRM_SAMPLES: u8 = 15;    // 15 × 200ms = 3s sustained tilt required
-const ORIENTATION_CHANGE_COOLDOWN_MS: u32 = 5_000; // 5s between changes
+const ORIENTATION_MIN_AXIS_G: f32 = 0.75;      // dominant axis needs deliberate tilt
+const ORIENTATION_CONFIRM_SAMPLES: u8 = 25;    // 25 × 200ms = 5s sustained tilt required
+const ORIENTATION_CHANGE_COOLDOWN_MS: u32 = 10_000; // 10s between changes
 const WIFI_RETRY_INTERVAL_MS: u32 = 300_000;
 const FAILURE_WARN_EVERY: u32 = 10;
 
