@@ -16,44 +16,34 @@ pub enum SettingsTap {
     TempF,
     TempC,
     OrientAuto,
-    OrientLandscape,
-    OrientPortrait,
+    OrientToggle,   // toggles between Landscape and Portrait
 }
 
-// Button layout constants (same for portrait and landscape — we adapt widths to screen_w).
-// Row 1 (temp units) and row 2 (orientation) sit below a header line.
 const ROW1_Y: i32 = 70;
 const ROW2_Y: i32 = 160;
 const BTN_H: i32 = 50;
 const BTN_GAP: i32 = 12;
 
-/// Returns (x, y, w, h) for the five option buttons.
-/// Indices 0-1: °F, °C  (2 equal buttons)
-/// Indices 2-4: Auto, Landscape, Portrait  (3 equal buttons)
-fn button_rects(screen_w: i32) -> [(i32, i32, i32, i32); 5] {
-    let btn2_w = (screen_w - 2 * CARD_MARGIN - BTN_GAP) / 2;
-    let btn3_w = (screen_w - 2 * CARD_MARGIN - 2 * BTN_GAP) / 3;
+/// Returns (x, y, w, h) for the four option buttons.
+/// Indices 0-1: °F, °C   Indices 2-3: Auto, Toggle
+fn button_rects(screen_w: i32) -> [(i32, i32, i32, i32); 4] {
+    let btn_w = (screen_w - 2 * CARD_MARGIN - BTN_GAP) / 2;
     let bx0 = CARD_MARGIN;
-    let bx1 = CARD_MARGIN + btn2_w + BTN_GAP;
-    let bx2 = CARD_MARGIN;
-    let bx3 = CARD_MARGIN + btn3_w + BTN_GAP;
-    let bx4 = CARD_MARGIN + 2 * (btn3_w + BTN_GAP);
+    let bx1 = CARD_MARGIN + btn_w + BTN_GAP;
     [
-        (bx0, ROW1_Y, btn2_w, BTN_H),  // °F
-        (bx1, ROW1_Y, btn2_w, BTN_H),  // °C
-        (bx2, ROW2_Y, btn3_w, BTN_H),  // Auto
-        (bx3, ROW2_Y, btn3_w, BTN_H),  // Landscape
-        (bx4, ROW2_Y, btn3_w, BTN_H),  // Portrait
+        (bx0, ROW1_Y, btn_w, BTN_H),  // °F
+        (bx1, ROW1_Y, btn_w, BTN_H),  // °C
+        (bx0, ROW2_Y, btn_w, BTN_H),  // Auto
+        (bx1, ROW2_Y, btn_w, BTN_H),  // Toggle (Landscape / Portrait)
     ]
 }
 
-/// Hit-test: which settings button was tapped?
 pub fn hit_test(x: i16, y: i16, orientation: Orientation) -> Option<SettingsTap> {
     let screen_w = layout::screen_w(orientation);
     let rects = button_rects(screen_w);
     let actions = [
         SettingsTap::TempF, SettingsTap::TempC,
-        SettingsTap::OrientAuto, SettingsTap::OrientLandscape, SettingsTap::OrientPortrait,
+        SettingsTap::OrientAuto, SettingsTap::OrientToggle,
     ];
     for (i, (bx, by, bw, bh)) in rects.iter().enumerate() {
         if x >= *bx as i16 && x < (*bx + *bw) as i16
@@ -107,12 +97,18 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
     Text::new("Orientation", Point::new(CARD_MARGIN, ROW2_Y - 16), section_style)
         .draw(fb).ok();
 
-    let labels_orient = ["Auto", "Landscape", "Portrait"];
-    let active_orient = match state.orientation_mode {
-        OrientationMode::Auto      => 0,
-        OrientationMode::Landscape => 1,
-        OrientationMode::Portrait  => 2,
+    // Toggle label shows where you'll GO next:
+    //   Auto or Portrait → shows "Landscape"  (tap to lock landscape)
+    //   Landscape        → shows "Portrait"   (tap to switch to portrait)
+    let toggle_label = if state.orientation_mode == OrientationMode::Landscape {
+        "Portrait"
+    } else {
+        "Landscape"
     };
+    let labels_orient = ["Auto", toggle_label];
+    // Auto button active when Auto; toggle button active when locked to anything
+    let active_orient = if state.orientation_mode == OrientationMode::Auto { 0 } else { 1 };
+
     for (i, label) in labels_orient.iter().enumerate() {
         let (bx, by, bw, bh) = rects[i + 2];
         let (fill, border) = if i == active_orient {
@@ -142,7 +138,6 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
     Text::new("  api set-key <key>", Point::new(CARD_MARGIN, console_y + 26), hint2_style)
         .draw(fb).ok();
 
-    // Bottom nav hint
     Text::with_alignment(
         "(swipe <-/-> or tap header to navigate)",
         Point::new(screen_w / 2, screen_h - 4),

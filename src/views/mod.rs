@@ -436,12 +436,13 @@ impl AppState {
                         self.orientation_mode = OrientationMode::Auto;
                         self.save_orientation_pref = true;
                     }
-                    settings::SettingsTap::OrientLandscape => {
-                        self.orientation_mode = OrientationMode::Landscape;
-                        self.save_orientation_pref = true;
-                    }
-                    settings::SettingsTap::OrientPortrait => {
-                        self.orientation_mode = OrientationMode::Portrait;
+                    settings::SettingsTap::OrientToggle => {
+                        // Landscape → Portrait → Landscape toggle;
+                        // Auto (or anything else) defaults to Landscape.
+                        self.orientation_mode = match self.orientation_mode {
+                            OrientationMode::Landscape => OrientationMode::Portrait,
+                            _                          => OrientationMode::Landscape,
+                        };
                         self.save_orientation_pref = true;
                     }
                 }
