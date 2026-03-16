@@ -1980,7 +1980,7 @@ fn main() -> Result<()> {
             let largest_sram = unsafe {
                 esp_idf_sys::heap_caps_get_largest_free_block(esp_idf_sys::MALLOC_CAP_INTERNAL)
             };
-            if largest_sram < 8_000 {
+            if largest_sram < 12_000 {
                 render_sram_low_streak = render_sram_low_streak.saturating_add(1);
                 if render_sram_low_streak >= 5 {
                     SRAM_DO_REBOOT.store(true, Ordering::Relaxed);

@@ -75,6 +75,9 @@ CONFIG_PTHREAD_TASK_STACK_SIZE_DEFAULT=24576
 # takes 1-3s per handshake, so IDLE1 can be starved for >5s on CPU 1.
 # 30s matches the minimum fetch interval and still catches real deadlocks.
 CONFIG_ESP_TASK_WDT_TIMEOUT_S=30
+# Panic (abort+reboot) on TWDT instead of printing forever.
+# Without this, a hung pthread prints the backtrace every 30s indefinitely.
+CONFIG_ESP_TASK_WDT_PANIC=y
 
 # FreeRTOS tick rate: keep at default 100Hz.
 # vTaskDelay(1)=10ms.  The flush functions now yield only every 4th chunk
