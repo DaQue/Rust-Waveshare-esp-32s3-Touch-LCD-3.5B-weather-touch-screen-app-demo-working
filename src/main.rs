@@ -1973,14 +1973,17 @@ fn main() -> Result<()> {
         // doing so during an active TLS handshake on the weather thread can
         // exhaust the heap.  The render thread keeps the previous frame and
         // we retry next tick when things settle.
-        // Also: if SRAM stays below 8 KB for 5+ consecutive ticks (~100ms),
-        // trigger a proactive reboot.  Single-tick dips are normal during the
-        // NWS TLS handshake; requiring a streak avoids false-positive reboots.
+        // Also: if SRAM stays below 12 KB for 5+ consecutive ticks (~100ms)
+        // AND we are past 5 minutes of uptime, trigger a proactive reboot.
+        // The first NWS TLS handshake (~50s) transiently dips below 12 KB
+        // for <100ms — the 5-min guard prevents false-positive reboots from
+        // that dip.  Genuine heap fragmentation happens at 15+ min.
         if state.dirty {
             let largest_sram = unsafe {
                 esp_idf_sys::heap_caps_get_largest_free_block(esp_idf_sys::MALLOC_CAP_INTERNAL)
             };
-            if largest_sram < 12_000 {
+            let uptime_us = unsafe { esp_idf_sys::esp_timer_get_time() };
+            if largest_sram < 12_000 && uptime_us > 300_000_000 {
                 render_sram_low_streak = render_sram_low_streak.saturating_add(1);
                 if render_sram_low_streak >= 5 {
                     SRAM_DO_REBOOT.store(true, Ordering::Relaxed);
