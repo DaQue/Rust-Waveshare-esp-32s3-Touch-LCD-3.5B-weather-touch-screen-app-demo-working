@@ -76,12 +76,13 @@ CONFIG_PTHREAD_TASK_STACK_SIZE_DEFAULT=24576
 # 30s matches the minimum fetch interval and still catches real deadlocks.
 CONFIG_ESP_TASK_WDT_TIMEOUT_S=30
 
-# FreeRTOS tick rate: default 100Hz makes vTaskDelay(1)=10ms → 240ms/frame flush.
-# 500Hz → vTaskDelay(1)=2ms → 48ms/frame flush (~5× better than 100Hz).
-# 1000Hz caused "tiT" (esp_timer task) stack overflow — callbacks fire too often
-# for the 3584-byte default stack, corrupting FreeRTOS state and crashing on rotation.
-CONFIG_FREERTOS_HZ=500
-# esp_timer task stack: default 3584 crashes at 500Hz under WiFi/lwIP timer load.
-# FreeRTOS timer daemon: default 2048 also undersized at higher tick rates.
+# FreeRTOS tick rate: keep at default 100Hz.
+# vTaskDelay(1)=10ms.  The flush functions now yield only every 4th chunk
+# (6 yields × 10ms = 60ms/frame) instead of every chunk (24 × 10ms = 240ms/frame).
+# Raising HZ to 500 or 1000 caused "tiT" (esp_timer task) stack overflow even
+# at 6144 bytes — WiFi/lwIP timer callbacks are too deep.  Flush optimization
+# achieves the same UI improvement without touching the FreeRTOS core.
+CONFIG_FREERTOS_HZ=100
+# esp_timer and timer daemon: bumped from defaults as insurance.
 CONFIG_ESP_TIMER_TASK_STACK_SIZE=6144
 CONFIG_FREERTOS_TIMER_TASK_STACK_DEPTH=4096

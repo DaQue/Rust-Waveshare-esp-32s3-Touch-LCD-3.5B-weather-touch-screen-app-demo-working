@@ -20,7 +20,7 @@ fn outdoor_temp_trend(history: &crate::psbox::PsramRing) -> i8 {
     let len = history.len();
     if len < 3 { return 0; }
     let diff = history[len - 1] - history[len - 3];
-    if diff > 1.5 { 1 } else if diff < -1.5 { -1 } else { 0 }
+    if diff > 0.5 { 1 } else if diff < -0.5 { -1 } else { 0 }
 }
 
 fn draw_temp_trend(fb: &mut Framebuffer, trend: i8, cx: i32, cy: i32) {
@@ -106,7 +106,14 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
             Some(AlertKind::Advisory) => rgb(255, 200, 110),
             _ => TEXT_HEADER,
         };
-        let city_style = MonoTextStyle::new(&PROFONT_14_POINT, city_color);
+        // Portrait: city also uses PROFONT_12 to avoid overlap with time text.
+        // PROFONT_14 (9px/char) at 20 chars = 180px centered at 160 → starts at 70,
+        // only 4px from time text end (~66px). PROFONT_12 (7px/char) → starts at 90.
+        let city_style = if state.orientation.is_portrait() {
+            MonoTextStyle::new(&PROFONT_12_POINT, city_color)
+        } else {
+            MonoTextStyle::new(&PROFONT_14_POINT, city_color)
+        };
         Text::with_alignment(
             &cw.city,
             Point::new(screen_w / 2, 24),

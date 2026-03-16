@@ -1349,7 +1349,7 @@ fn main() -> Result<()> {
                                 esp_idf_sys::MALLOC_CAP_DMA,
                             )
                         };
-                        if dma_free >= 15_000 {
+                        if dma_free >= 13_000 {
                             fb = framebuffer::Framebuffer::new(w, h);
                             fb_orientation = snapshot.orientation;
                         } else {

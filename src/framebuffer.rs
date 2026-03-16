@@ -130,6 +130,7 @@ impl Framebuffer {
         let ph = PANEL_HEIGHT as i32;
 
         let mut py = 0i32;
+        let mut chunk_n = 0i32;
         while py < ph {
             let py_end = (py + CHUNK_LINES).min(ph);
             let _rows = (py_end - py) as usize;
@@ -158,8 +159,12 @@ impl Framebuffer {
                     py_end,
                     dma_slice.as_ptr().cast(),
                 );
-                // Yield between chunks so IDLE1 gets scheduled and feeds the WDT.
-                esp_idf_sys::vTaskDelay(1);
+                // Yield every 4 chunks (6× per frame) so IDLE1 feeds the WDT.
+                // At 100Hz: 6 × 10ms = 60ms/frame vs 240ms if yielding every chunk.
+                chunk_n += 1;
+                if chunk_n % 4 == 0 {
+                    esp_idf_sys::vTaskDelay(1);
+                }
             }
 
             py = py_end;
@@ -178,6 +183,7 @@ impl Framebuffer {
         let fb_w = self.width as usize;
 
         let mut py = 0i32;
+        let mut chunk_n = 0i32;
         while py < ph {
             let py_end = (py + CHUNK_LINES).min(ph);
 
@@ -203,7 +209,10 @@ impl Framebuffer {
                     py_end,
                     dma_slice.as_ptr().cast(),
                 );
-                esp_idf_sys::vTaskDelay(1);
+                chunk_n += 1;
+                if chunk_n % 4 == 0 {
+                    esp_idf_sys::vTaskDelay(1);
+                }
             }
 
             py = py_end;
@@ -222,6 +231,7 @@ impl Framebuffer {
         let fb_w = self.width as usize;
 
         let mut py = 0i32;
+        let mut chunk_n = 0i32;
         while py < ph {
             let py_end = (py + CHUNK_LINES).min(ph);
 
@@ -249,7 +259,10 @@ impl Framebuffer {
                     py_end,
                     dma_slice.as_ptr().cast(),
                 );
-                esp_idf_sys::vTaskDelay(1);
+                chunk_n += 1;
+                if chunk_n % 4 == 0 {
+                    esp_idf_sys::vTaskDelay(1);
+                }
             }
 
             py = py_end;
@@ -269,6 +282,7 @@ impl Framebuffer {
         let ph = PANEL_HEIGHT as i32;
 
         let mut py = 0i32;
+        let mut chunk_n = 0i32;
         while py < ph {
             let py_end = (py + CHUNK_LINES).min(ph);
 
@@ -295,7 +309,10 @@ impl Framebuffer {
                     py_end,
                     dma_slice.as_ptr().cast(),
                 );
-                esp_idf_sys::vTaskDelay(1);
+                chunk_n += 1;
+                if chunk_n % 4 == 0 {
+                    esp_idf_sys::vTaskDelay(1);
+                }
             }
             py = py_end;
         }
