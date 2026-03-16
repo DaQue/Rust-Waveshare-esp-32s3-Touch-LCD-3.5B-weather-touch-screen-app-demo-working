@@ -75,3 +75,8 @@ CONFIG_PTHREAD_TASK_STACK_SIZE_DEFAULT=24576
 # takes 1-3s per handshake, so IDLE1 can be starved for >5s on CPU 1.
 # 30s matches the minimum fetch interval and still catches real deadlocks.
 CONFIG_ESP_TASK_WDT_TIMEOUT_S=30
+
+# FreeRTOS tick rate: default 100Hz makes vTaskDelay(1)=10ms.
+# The render flush calls vTaskDelay(1) after each of 24 DMA chunks = 240ms/frame,
+# making tap-to-screen latency 500ms-1s.  1000Hz → vTaskDelay(1)=1ms → 24ms/frame.
+CONFIG_FREERTOS_HZ=1000
