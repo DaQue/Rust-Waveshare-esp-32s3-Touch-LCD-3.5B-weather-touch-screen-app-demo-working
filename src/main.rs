@@ -92,6 +92,7 @@ const ORIENTATION_POLL_TICKS: u32 = 2; // every 200ms
 const ORIENTATION_SWITCH_MARGIN_G: f32 = 0.25; // one axis must dominate by this much
 const ORIENTATION_MAX_Z_G: f32 = 0.90;         // bail if nearly flat (z > 0.9g)
 const ORIENTATION_MIN_AXIS_G: f32 = 0.75;      // dominant axis needs deliberate tilt
+const ORIENTATION_SIGN_THRESHOLD_G: f32 = 0.20; // axis must be clearly +/- to resolve normal vs flipped
 const ORIENTATION_CONFIRM_SAMPLES: u8 = 25;    // 25 × 200ms = 5s sustained tilt required
 const ORIENTATION_CHANGE_COOLDOWN_MS: u32 = 10_000; // 10s between changes
 const WIFI_RETRY_INTERVAL_MS: u32 = 300_000;
@@ -356,16 +357,20 @@ fn detect_orientation_from_imu(r: &qmi8658::ImuReading) -> Option<layout::Orient
     }
     if ax > ay + ORIENTATION_SWITCH_MARGIN_G {
         // For this board mounting, +X tilt corresponds to upside-down portrait.
-        if r.accel_x >= 0.0 {
+        if r.accel_x < -ORIENTATION_SIGN_THRESHOLD_G {
+            Some(layout::Orientation::Portrait)
+        } else if r.accel_x > ORIENTATION_SIGN_THRESHOLD_G {
             Some(layout::Orientation::PortraitFlipped)
         } else {
-            Some(layout::Orientation::Portrait)
+            None // sign ambiguous — ignore
         }
     } else if ay > ax + ORIENTATION_SWITCH_MARGIN_G {
-        if r.accel_y < 0.0 {
+        if r.accel_y < -ORIENTATION_SIGN_THRESHOLD_G {
             Some(layout::Orientation::Landscape)
-        } else {
+        } else if r.accel_y > ORIENTATION_SIGN_THRESHOLD_G {
             Some(layout::Orientation::LandscapeFlipped)
+        } else {
+            None // sign ambiguous — ignore
         }
     } else {
         None
