@@ -1292,6 +1292,7 @@ fn main() -> Result<()> {
     let mut last_hvac_record_ms: u32 = 0;
     let mut last_pressure_sample_ms: u32 = 0;
     let mut tick_count: u32 = 0;
+    let mut render_sram_low_streak: u8 = 0;
     let mut orientation_candidate = state.orientation;
     let mut orientation_candidate_count: u8 = 0;
     let mut last_orientation_change_ms: u32 = now_ms();
@@ -1972,16 +1973,23 @@ fn main() -> Result<()> {
         // doing so during an active TLS handshake on the weather thread can
         // exhaust the heap.  The render thread keeps the previous frame and
         // we retry next tick when things settle.
-        // Also: if SRAM is below the render threshold here, trigger the proactive
-        // reboot immediately — don't wait for the next HTTP fetch to notice.
+        // Also: if SRAM stays below 8 KB for 5+ consecutive ticks (~100ms),
+        // trigger a proactive reboot.  Single-tick dips are normal during the
+        // NWS TLS handshake; requiring a streak avoids false-positive reboots.
         if state.dirty {
             let largest_sram = unsafe {
                 esp_idf_sys::heap_caps_get_largest_free_block(esp_idf_sys::MALLOC_CAP_INTERNAL)
             };
             if largest_sram < 8_000 {
-                SRAM_DO_REBOOT.store(true, Ordering::Relaxed);
-            } else if render_tx.try_send(state.clone()).is_ok() {
-                state.dirty = false;
+                render_sram_low_streak = render_sram_low_streak.saturating_add(1);
+                if render_sram_low_streak >= 5 {
+                    SRAM_DO_REBOOT.store(true, Ordering::Relaxed);
+                }
+            } else {
+                render_sram_low_streak = 0;
+                if render_tx.try_send(state.clone()).is_ok() {
+                    state.dirty = false;
+                }
             }
         }
 
