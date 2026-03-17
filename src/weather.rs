@@ -46,6 +46,7 @@ pub struct HourlyEntry {
     pub time_text: String,
     pub detail: String,
     pub temp_text: String,
+    pub condition: String,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -430,6 +431,7 @@ fn parse_forecast(json: &str) -> Result<Forecast> {
                 time_text: format_hour_label(tm.tm_hour),
                 detail: format!("Feels {}° Wind {}", feels_i, wind_i),
                 temp_text: format!("{}°", temp_i),
+                condition: condition_short(weather_id).to_string(),
             });
         }
     }
