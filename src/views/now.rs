@@ -260,12 +260,14 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
                 let p_text = format!("{:.1} hPa", p + correction);
                 Text::new(&p_text, Point::new(ind_x, card_top + 95), ind_style_small).draw(fb).ok();
             }
-            // Pressure trend indicator (3h/1h/30m)
-            if let Some((delta, label)) = state.pressure_history.pressure_trend() {
-                let sign = if delta >= 0.0 { "+" } else { "" };
-                let trend_text = format!("{}: {}{:.1}", label, sign, delta);
-                Text::new(&trend_text, Point::new(ind_x, card_top + 111), ind_style_small)
-                    .draw(fb).ok();
+            // Pressure trend indicator (3h/1h/30m) — hide when sensor offline
+            if state.indoor_pressure.is_some() {
+                if let Some((delta, label)) = state.pressure_history.pressure_trend() {
+                    let sign = if delta >= 0.0 { "+" } else { "" };
+                    let trend_text = format!("{}: {}{:.1}", label, sign, delta);
+                    Text::new(&trend_text, Point::new(ind_x, card_top + 111), ind_style_small)
+                        .draw(fb).ok();
+                }
             }
         }
     } else {
@@ -307,10 +309,12 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
             let p_text = format!("{:.1} hPa", p + correction);
             Text::new(&p_text, Point::new(CARD_MARGIN + 8, ind_card_y + 48), ind_small).draw(fb).ok();
         }
-        if let Some((delta, label)) = state.pressure_history.pressure_trend() {
-            let sign = if delta >= 0.0 { "+" } else { "" };
-            let trend_text = format!("{}h: {}{:.1}", label.trim_end_matches('h'), sign, delta);
-            Text::new(&trend_text, Point::new(CARD_MARGIN + 100, ind_card_y + 48), ind_small).draw(fb).ok();
+        if state.indoor_pressure.is_some() {
+            if let Some((delta, label)) = state.pressure_history.pressure_trend() {
+                let sign = if delta >= 0.0 { "+" } else { "" };
+                let trend_text = format!("{}h: {}{:.1}", label.trim_end_matches('h'), sign, delta);
+                Text::new(&trend_text, Point::new(CARD_MARGIN + 100, ind_card_y + 48), ind_small).draw(fb).ok();
+            }
         }
 
         // Forecast card
