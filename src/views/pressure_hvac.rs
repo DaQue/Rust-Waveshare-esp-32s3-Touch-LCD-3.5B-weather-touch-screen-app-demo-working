@@ -11,7 +11,7 @@ use embedded_graphics::{
     primitives::{Line, PrimitiveStyle, PrimitiveStyleBuilder, Rectangle},
     text::{Alignment, Text},
 };
-use profont::PROFONT_14_POINT;
+use profont::{PROFONT_10_POINT, PROFONT_14_POINT};
 
 use crate::framebuffer::Framebuffer;
 use crate::hvac::HvacState;
@@ -320,56 +320,53 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
         .ok();
 
         // Heat line
+        // Portrait: PROFONT_10 (6px/char) to fit 42-char stat line in 320px width.
         let heat_y = hvac_y + 32;
-        let heat_style = MonoTextStyle::new(&PROFONT_14_POINT, COLOR_HEAT);
+        let (heat_style, cool_style, warn_style, stat_line_h) = if landscape {
+            (
+                MonoTextStyle::new(&PROFONT_14_POINT, COLOR_HEAT),
+                MonoTextStyle::new(&PROFONT_14_POINT, COLOR_COOL),
+                MonoTextStyle::new(&PROFONT_14_POINT, COLOR_WARN),
+                18i32,
+            )
+        } else {
+            (
+                MonoTextStyle::new(&PROFONT_10_POINT, COLOR_HEAT),
+                MonoTextStyle::new(&PROFONT_10_POINT, COLOR_COOL),
+                MonoTextStyle::new(&PROFONT_10_POINT, COLOR_WARN),
+                14i32,
+            )
+        };
         if h.cycles > 0 {
             let txt = format!(
                 "Heat: {}h{:02}m | {} cyc | avg {:.0}m | max {}m",
-                h.total_minutes / 60,
-                h.total_minutes % 60,
-                h.cycles,
-                h.avg_cycle_mins,
-                h.longest_cycle_mins,
+                h.total_minutes / 60, h.total_minutes % 60,
+                h.cycles, h.avg_cycle_mins, h.longest_cycle_mins,
             );
-            Text::new(&txt, Point::new(14, heat_y), heat_style)
-                .draw(fb)
-                .ok();
+            Text::new(&txt, Point::new(14, heat_y), heat_style).draw(fb).ok();
         } else {
-            Text::new("Heat: --", Point::new(14, heat_y), heat_style)
-                .draw(fb)
-                .ok();
+            Text::new("Heat: --", Point::new(14, heat_y), heat_style).draw(fb).ok();
         }
 
         // Cool line
-        let cool_y = heat_y + 18;
-        let cool_style = MonoTextStyle::new(&PROFONT_14_POINT, COLOR_COOL);
+        let cool_y = heat_y + stat_line_h;
         if c.cycles > 0 {
             let txt = format!(
                 "Cool: {}h{:02}m | {} cyc | avg {:.0}m | max {}m",
-                c.total_minutes / 60,
-                c.total_minutes % 60,
-                c.cycles,
-                c.avg_cycle_mins,
-                c.longest_cycle_mins,
+                c.total_minutes / 60, c.total_minutes % 60,
+                c.cycles, c.avg_cycle_mins, c.longest_cycle_mins,
             );
-            Text::new(&txt, Point::new(14, cool_y), cool_style)
-                .draw(fb)
-                .ok();
+            Text::new(&txt, Point::new(14, cool_y), cool_style).draw(fb).ok();
         } else {
-            Text::new("Cool: --", Point::new(14, cool_y), cool_style)
-                .draw(fb)
-                .ok();
+            Text::new("Cool: --", Point::new(14, cool_y), cool_style).draw(fb).ok();
         }
 
         // Short-cycle warning (if any)
         let short_total = h.short_cycles + c.short_cycles;
         if short_total > 0 {
-            let warn_y = cool_y + 18;
-            let warn_style = MonoTextStyle::new(&PROFONT_14_POINT, COLOR_WARN);
+            let warn_y = cool_y + stat_line_h;
             let txt = format!("Short cycles (<4m): {}", short_total);
-            Text::new(&txt, Point::new(14, warn_y), warn_style)
-                .draw(fb)
-                .ok();
+            Text::new(&txt, Point::new(14, warn_y), warn_style).draw(fb).ok();
         }
     }
 

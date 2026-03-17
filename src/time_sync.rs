@@ -13,7 +13,7 @@ const POLL_INTERVAL_MS: u32 = 250;
 /// Sets the TZ environment variable, then creates an SNTP client that polls
 /// pool.ntp.org. Waits up to 20 seconds for an initial sync before returning.
 /// The returned EspSntp must be kept alive to maintain periodic re-sync.
-pub fn sync_time(tz: &str) -> Result<EspSntp<'static>> {
+pub(crate) fn sync_time(tz: &str) -> Result<EspSntp<'static>> {
     info!("Setting timezone: {}", tz);
     // Safety: single-threaded at this point during init
     unsafe {
@@ -52,7 +52,7 @@ pub fn sync_time(tz: &str) -> Result<EspSntp<'static>> {
 }
 
 /// Format the current local time as "HH:MM", or None if the clock is not set.
-pub fn format_local_time() -> Option<String> {
+pub(crate) fn format_local_time() -> Option<String> {
     let mut now: libc::time_t = 0;
     unsafe {
         libc::time(&mut now);

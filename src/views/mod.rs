@@ -6,6 +6,7 @@ pub mod forecast;
 pub mod i2c_scan;
 pub mod wifi_scan;
 pub mod about;
+pub mod settings;
 pub mod warning;
 pub mod nav_menu;
 
@@ -38,6 +39,7 @@ pub enum View {
     I2cScan,
     WifiScan,
     About,
+    Settings,
     // Special
     NavMenu,
     Warning,
@@ -54,9 +56,10 @@ impl View {
             View::Indoor       => Some(View::Hvac),
             View::Hvac         => Some(View::PressureHvac),
             View::PressureHvac => None,
-            View::I2cScan      => Some(View::WifiScan),
-            View::WifiScan     => Some(View::About),
-            View::About        => None,
+            View::Settings     => Some(View::About),
+            View::About        => Some(View::WifiScan),
+            View::WifiScan     => Some(View::I2cScan),
+            View::I2cScan      => None,
             _                  => None,
         }
     }
@@ -67,8 +70,9 @@ impl View {
             View::Forecast     => Some(View::Now),
             View::Hvac         => Some(View::Indoor),
             View::PressureHvac => Some(View::Hvac),
-            View::WifiScan     => Some(View::I2cScan),
-            View::About        => Some(View::WifiScan),
+            View::About        => Some(View::Settings),
+            View::WifiScan     => Some(View::About),
+            View::I2cScan      => Some(View::WifiScan),
             _                  => None,
         }
     }
@@ -111,6 +115,7 @@ pub struct AppState {
     pub use_celsius: bool,
     pub weather_stale: bool,
     pub save_celsius_pref: bool,
+    pub save_orientation_pref: bool,
     pub force_weather_refresh: bool,
     pub warning_active: bool,
     pub warning_silenced_fingerprint: String,
@@ -155,6 +160,7 @@ impl AppState {
             use_celsius: false,
             weather_stale: false,
             save_celsius_pref: false,
+            save_orientation_pref: false,
             force_weather_refresh: false,
             warning_active: false,
             warning_silenced_fingerprint: String::new(),
@@ -214,17 +220,13 @@ impl AppState {
                     self.dirty = true;
                     return true;
                 }
-                // Move to prev view within group, or open NavMenu at boundary
+                // Move to prev view within group, or open NavMenu at any boundary
                 if let Some(prev) = self.current_view.prev() {
                     self.current_view = prev;
                     self.forecast_hourly_open = false;
-                } else if self.current_view != View::Now {
-                    // At left edge of a non-home group → NavMenu
+                } else {
+                    // At left edge of any group (including Now) → NavMenu
                     self.current_view = View::NavMenu;
-                }
-                // SwipeRight on Now → About (quick health/uptime check)
-                if self.current_view == View::Now {
-                    self.current_view = View::About;
                 }
                 self.dirty = true;
                 true
@@ -243,6 +245,18 @@ impl AppState {
             Gesture::SwipeDown => {
                 if self.current_view == View::Forecast && self.forecast_hourly_open {
                     self.forecast_hourly_scroll = self.forecast_hourly_scroll.saturating_sub(4);
+                    self.dirty = true;
+                    true
+                } else {
+                    false
+                }
+            }
+
+            Gesture::LongPress => {
+                // Long press from anywhere → NavMenu (except already there or home)
+                if self.current_view != View::NavMenu && self.current_view != View::Now {
+                    self.current_view = View::NavMenu;
+                    self.forecast_hourly_open = false;
                     self.dirty = true;
                     true
                 } else {
@@ -271,7 +285,7 @@ impl AppState {
                     false
                 }
             }
-            Gesture::SwipeLeft | Gesture::SwipeRight => {
+            Gesture::SwipeLeft | Gesture::SwipeRight | Gesture::LongPress => {
                 if !self.warning_active {
                     // Already silenced — allow exit
                     self.current_view = View::Now;
@@ -317,7 +331,7 @@ impl AppState {
                 self.current_view = match group_tap {
                     nav_menu::NavTap::Weather => View::Now,
                     nav_menu::NavTap::Sensors => View::Indoor,
-                    nav_menu::NavTap::System  => View::I2cScan,
+                    nav_menu::NavTap::System  => View::Settings,
                 };
                 self.forecast_hourly_open = false;
                 self.dirty = true;
@@ -357,6 +371,16 @@ impl AppState {
                 self.dirty = true;
                 return true;
             }
+        }
+
+        // ── Alert overlay close tap ──
+        // Any tap while the overlay is open closes it.  This comes before all
+        // other Now-view handlers so tapping the icon area (y < overlay_y)
+        // can't toggle now_alerts_open back off in the same gesture.
+        if self.current_view == View::Now && self.now_alerts_open {
+            self.now_alerts_open = false;
+            self.dirty = true;
+            return true;
         }
 
         // ── NOW view taps ──
@@ -418,6 +442,37 @@ impl AppState {
             }
         }
 
+        // ── Settings view taps ──
+        if self.current_view == View::Settings {
+            if let Some(action) = settings::hit_test(x, y, self.orientation) {
+                match action {
+                    settings::SettingsTap::TempF => {
+                        self.use_celsius = false;
+                        self.save_celsius_pref = true;
+                    }
+                    settings::SettingsTap::TempC => {
+                        self.use_celsius = true;
+                        self.save_celsius_pref = true;
+                    }
+                    settings::SettingsTap::OrientAuto => {
+                        self.orientation_mode = OrientationMode::Auto;
+                        self.save_orientation_pref = true;
+                    }
+                    settings::SettingsTap::OrientToggle => {
+                        // Landscape → Portrait → Landscape toggle;
+                        // Auto (or anything else) defaults to Landscape.
+                        self.orientation_mode = match self.orientation_mode {
+                            OrientationMode::Landscape => OrientationMode::Portrait,
+                            _                          => OrientationMode::Landscape,
+                        };
+                        self.save_orientation_pref = true;
+                    }
+                }
+                self.dirty = true;
+                return true;
+            }
+        }
+
         // ── Forecast view taps ──
         if self.current_view == View::Forecast {
             // Tap on daily row → open hourly drill-down
@@ -454,6 +509,7 @@ pub fn draw_current_view(fb: &mut Framebuffer, state: &AppState) {
         View::I2cScan    => i2c_scan::draw(fb, state),
         View::WifiScan   => wifi_scan::draw(fb, state),
         View::About      => about::draw(fb, state),
+        View::Settings   => settings::draw(fb, state),
         View::NavMenu    => nav_menu::draw(fb, state),
         View::Warning    => warning::draw(fb, state),
     }

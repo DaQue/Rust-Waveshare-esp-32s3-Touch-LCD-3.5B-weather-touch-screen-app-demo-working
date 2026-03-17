@@ -244,7 +244,7 @@ impl PressureHistory {
     // ── NVS serialisation ───────────────────────────────────────────
 
     /// Byte size of the serialised form.
-    pub fn serialised_size() -> usize {
+    pub(crate) fn serialised_size() -> usize {
         // short: count(8) + idx(8) + SHORT_CAP × 8 bytes (two f32 per sample)
         // long:  count(8) + idx(8) + LONG_CAP  × 8 bytes
         (8 + 8 + SHORT_CAP * 8) + (8 + 8 + LONG_CAP * 8)

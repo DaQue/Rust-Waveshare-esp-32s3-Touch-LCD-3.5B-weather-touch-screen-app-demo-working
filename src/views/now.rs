@@ -18,9 +18,9 @@ fn f_to_c(f: f32) -> f32 {
 /// Returns 1 (rising), -1 (falling), or 0 (steady/insufficient data).
 fn outdoor_temp_trend(history: &crate::psbox::PsramRing) -> i8 {
     let len = history.len();
-    if len < 3 { return 0; }
-    let diff = history[len - 1] - history[len - 3];
-    if diff > 1.5 { 1 } else if diff < -1.5 { -1 } else { 0 }
+    if len < 2 { return 0; }
+    let diff = history[len - 1] - history[len - 2];
+    if diff > 0.5 { 1 } else if diff < -0.5 { -1 } else { 0 }
 }
 
 fn draw_temp_trend(fb: &mut Framebuffer, trend: i8, cx: i32, cy: i32) {
@@ -41,6 +41,19 @@ fn draw_temp_trend(fb: &mut Framebuffer, trend: i8, cx: i32, cy: i32) {
     Triangle::new(pts[0], pts[1], pts[2])
         .into_styled(PrimitiveStyle::with_fill(color))
         .draw(fb).ok();
+}
+
+/// Short-term forecast label: "Rain by 3PM" or "Overcast thru 3PM".
+fn short_term_label(state: &AppState) -> Option<String> {
+    let next = state.forecast.as_ref()
+        .and_then(|fc| fc.days.first())
+        .and_then(|day| day.entries.first())?;
+    let cur = state.current_weather.as_ref().map(|cw| cw.condition.as_str()).unwrap_or("");
+    if next.condition == cur {
+        Some(format!("{} thru {}", next.condition, next.time_text))
+    } else {
+        Some(format!("{} by {}", next.condition, next.time_text))
+    }
 }
 
 /// Draw WiFi signal bars + RSSI dBm value, right-aligned at (x_right, y_base).
@@ -85,8 +98,14 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
     draw_hline(fb, HEADER_LINE_Y, LINE_COLOR_1);
 
     // Header: time (left), city (center), status (right)
-    let header_style = MonoTextStyle::new(&PROFONT_14_POINT, TEXT_HEADER);
-    Text::new(&state.time_text, Point::new(10, 24), header_style)
+    // In portrait (320px wide) PROFONT_14 "12:34 PM" = 72px and city can start
+    // at ~70px → use PROFONT_12 (7px/char → 56px) to avoid overlap.
+    let time_style = if state.orientation.is_portrait() {
+        MonoTextStyle::new(&PROFONT_12_POINT, TEXT_HEADER)
+    } else {
+        MonoTextStyle::new(&PROFONT_14_POINT, TEXT_HEADER)
+    };
+    Text::new(&state.time_text, Point::new(10, 24), time_style)
         .draw(fb)
         .ok();
 
@@ -100,7 +119,14 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
             Some(AlertKind::Advisory) => rgb(255, 200, 110),
             _ => TEXT_HEADER,
         };
-        let city_style = MonoTextStyle::new(&PROFONT_14_POINT, city_color);
+        // Portrait: city also uses PROFONT_12 to avoid overlap with time text.
+        // PROFONT_14 (9px/char) at 20 chars = 180px centered at 160 → starts at 70,
+        // only 4px from time text end (~66px). PROFONT_12 (7px/char) → starts at 90.
+        let city_style = if state.orientation.is_portrait() {
+            MonoTextStyle::new(&PROFONT_12_POINT, city_color)
+        } else {
+            MonoTextStyle::new(&PROFONT_14_POINT, city_color)
+        };
         Text::with_alignment(
             &cw.city,
             Point::new(screen_w / 2, 24),
@@ -127,7 +153,7 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
     }
 
     let card_top = 36;
-    let card_h = if state.orientation.is_portrait() { 178 } else { 140 };
+    let card_h = if state.orientation.is_portrait() { 156 } else { 140 };
     draw_card(
         fb,
         CARD_MARGIN,
@@ -158,25 +184,25 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
         let hint_style = MonoTextStyle::new(&PROFONT_10_POINT, TEXT_BOTTOM);
 
         if state.orientation.is_portrait() {
-            // Portrait: same layout as before
-            let stats_text = format!(
-                "Hum {}%  Wind {:.0}mph  {} hPa",
-                cw.humidity, cw.wind_mph, cw.pressure_hpa
-            );
-            let stats_style = MonoTextStyle::new(&PROFONT_10_POINT, TEXT_TERTIARY);
-            Text::new(&temp_text, Point::new(120, card_top + 46), temp_style).draw(fb).ok();
+            // Portrait weather card: icon left, temp/feels/condition right
+            // card_top=36, card_h=178 → inner y range 37..213
+            Text::new(&temp_text, Point::new(106, card_top + 46), temp_style).draw(fb).ok();
             let trend = outdoor_temp_trend(&state.outdoor_temp_history);
-            let triangle_x = 120 + temp_text.chars().count() as i32 * 14 + 17;
-            draw_temp_trend(fb, trend, triangle_x, card_top + 42);
-            Text::new(&feels_text, Point::new(120, card_top + 72), feels_style).draw(fb).ok();
-            Text::new(&cw.condition, Point::new(120, card_top + 94), cond_style).draw(fb).ok();
-            Text::new(&stats_text, Point::new(18, card_top + 124), stats_style).draw(fb).ok();
+            // PROFONT_24 char width=16; baseline=24 → cell_top=card_top+22 ≥ 37+border ✓
+            let triangle_x = 106 + temp_text.chars().count() as i32 * 16 + 10;
+            draw_temp_trend(fb, trend, triangle_x, card_top + 36);
+            Text::new(&feels_text, Point::new(106, card_top + 72), feels_style).draw(fb).ok();
+            Text::new(&cw.condition, Point::new(106, card_top + 94), cond_style).draw(fb).ok();
+            if let Some(label) = short_term_label(state) {
+                let st_style = MonoTextStyle::new(&PROFONT_10_POINT, TEXT_DETAIL);
+                Text::new(&label, Point::new(106, card_top + 114), st_style).draw(fb).ok();
+            }
             let hint = if state.weather_alerts.is_empty() {
-                "(tap temp = F/C)   (tap icon = refresh)"
+                "(tap icon=refresh)  (tap temp=F/C)"
             } else {
-                "(tap temp = F/C)   (tap icon = alerts)"
+                "(tap icon=alerts)  (tap temp=F/C)"
             };
-            Text::new(hint, Point::new(18, card_top + 144), hint_style).draw(fb).ok();
+            Text::new(hint, Point::new(18, card_top + card_h - 14), hint_style).draw(fb).ok();
         } else {
             // Landscape: new layout — weather left/middle, Indoor right panel
             const DIVIDER_X: i32 = 298;
@@ -193,12 +219,16 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
             // Feels like + condition
             Text::new(&feels_text, Point::new(106, card_top + 56), feels_style).draw(fb).ok();
             Text::new(&cw.condition, Point::new(106, card_top + 76), cond_style).draw(fb).ok();
+            if let Some(label) = short_term_label(state) {
+                let st_style = MonoTextStyle::new(&PROFONT_10_POINT, TEXT_DETAIL);
+                Text::new(&label, Point::new(106, card_top + 96), st_style).draw(fb).ok();
+            }
 
             // Hint row at card bottom
             let hint = if state.weather_alerts.is_empty() {
-                "(tap temp=F/C)  (tap icon=refresh)"
+                "(tap icon=refresh)  (tap temp=F/C)"
             } else {
-                "(tap temp=F/C)  (tap icon=alerts)"
+                "(tap icon=alerts)  (tap temp=F/C)"
             };
             Text::new(hint, Point::new(CARD_MARGIN + 6, card_top + card_h - 13), hint_style)
                 .draw(fb).ok();
@@ -212,31 +242,32 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
             let ind_style_temp  = MonoTextStyle::new(&PROFONT_18_POINT, TEXT_PRIMARY);
             let ind_style_small = MonoTextStyle::new(&PROFONT_10_POINT, TEXT_TERTIARY);
 
-            // "Indoor": baseline=14 for PROFONT_14, cell_top = y-14; card_top+15=51 → cell_top=37 ✓
-            Text::new("Indoor", Point::new(ind_x, card_top + 15), ind_style_label).draw(fb).ok();
+            // "Indoor": push down to card_top+22 so text top aligns with icon top (card_top+8)
+            Text::new("Indoor", Point::new(ind_x, card_top + 22), ind_style_label).draw(fb).ok();
 
             if let Some(t) = state.indoor_temp {
                 let t_disp = if state.use_celsius { f_to_c(t) } else { t };
                 let unit_c = if state.use_celsius { "C" } else { "F" };
                 let t_text = format!("{:.1}°{}", t_disp, unit_c);
-                // baseline=17 for PROFONT_18; "Indoor" cell_bottom=55; card_top+40=76 → cell_top=59, gap=4px ✓
-                Text::new(&t_text, Point::new(ind_x, card_top + 40), ind_style_temp).draw(fb).ok();
+                Text::new(&t_text, Point::new(ind_x, card_top + 47), ind_style_temp).draw(fb).ok();
             }
             if let Some(h) = state.indoor_humidity {
                 let h_text = format!("{:.0}% RH", h);
-                Text::new(&h_text, Point::new(ind_x, card_top + 72), ind_style_small).draw(fb).ok();
+                Text::new(&h_text, Point::new(ind_x, card_top + 79), ind_style_small).draw(fb).ok();
             }
             if let Some(p) = state.indoor_pressure {
                 let correction = state.pressure_history.delta_owm_bme_stable().unwrap_or(0.0);
                 let p_text = format!("{:.1} hPa", p + correction);
-                Text::new(&p_text, Point::new(ind_x, card_top + 88), ind_style_small).draw(fb).ok();
+                Text::new(&p_text, Point::new(ind_x, card_top + 95), ind_style_small).draw(fb).ok();
             }
-            // Pressure trend indicator (3h/1h/30m)
-            if let Some((delta, label)) = state.pressure_history.pressure_trend() {
-                let sign = if delta >= 0.0 { "+" } else { "" };
-                let trend_text = format!("{}: {}{:.1}", label, sign, delta);
-                Text::new(&trend_text, Point::new(ind_x, card_top + 104), ind_style_small)
-                    .draw(fb).ok();
+            // Pressure trend indicator (3h/1h/30m) — hide when sensor offline
+            if state.indoor_pressure.is_some() {
+                if let Some((delta, label)) = state.pressure_history.pressure_trend() {
+                    let sign = if delta >= 0.0 { "+" } else { "" };
+                    let trend_text = format!("{}: {}{:.1}", label, sign, delta);
+                    Text::new(&trend_text, Point::new(ind_x, card_top + 111), ind_style_small)
+                        .draw(fb).ok();
+                }
             }
         }
     } else {
@@ -246,59 +277,110 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
             .ok();
     }
 
-    // ── Bottom forecast (full width) ──────────────────────────────────────────
-    let fc_top = card_top + card_h + 6;
-    let fc_h   = screen_h - fc_top - 16;
+    // ── Portrait: indoor card + forecast card ─────────────────────────────────
+    if state.orientation.is_portrait() {
+        let ind_card_y = card_top + card_h + 6;  // 36+156+6 = 198
+        let ind_card_h = 60;
+        draw_card(fb, CARD_MARGIN, ind_card_y, screen_w - 2 * CARD_MARGIN, ind_card_h, 8,
+                  CARD_FILL_INDOOR, CARD_BORDER_INDOOR, 1);
 
-    draw_card(
-        fb,
-        CARD_MARGIN,
-        fc_top,
-        screen_w - 2 * CARD_MARGIN,
-        fc_h,
-        10,
-        CARD_FILL_FORECAST_PREVIEW,
-        CARD_BORDER_FORECAST_PREVIEW,
-        1,
-    );
+        // Indoor card content: row1 label+temp+RH, row2 pressure+trend
+        // PROFONT_14 baseline=13: cell_top = y-13; row1 y=216 → cell_top=203 ≥ 199+1 ✓
+        let ind_label = MonoTextStyle::new(&PROFONT_14_POINT, TEXT_HEADER);
+        let ind_small = MonoTextStyle::new(&PROFONT_10_POINT, TEXT_TERTIARY);
+        Text::new("Indoor", Point::new(CARD_MARGIN + 8, ind_card_y + 18), ind_label).draw(fb).ok();
 
-    if let Some(fc) = &state.forecast {
-        let day_style  = MonoTextStyle::new(&PROFONT_10_POINT, TEXT_TERTIARY);
-        let temp_style = MonoTextStyle::new(&PROFONT_14_POINT, TEXT_SECONDARY);
+        let mut ind_x2 = CARD_MARGIN + 70;
+        if let Some(t) = state.indoor_temp {
+            let t_disp = if state.use_celsius { f_to_c(t) } else { t };
+            let unit_c = if state.use_celsius { "C" } else { "F" };
+            let t_text = format!("{:.1}°{}", t_disp, unit_c);
+            Text::new(&t_text, Point::new(ind_x2, ind_card_y + 18), ind_label).draw(fb).ok();
+            ind_x2 += t_text.chars().count() as i32 * 10 + 8;
+        }
+        if let Some(h) = state.indoor_humidity {
+            let h_text = format!("{:.0}% RH", h);
+            Text::new(&h_text, Point::new(ind_x2, ind_card_y + 18), ind_small).draw(fb).ok();
+        }
+        // Row 2: pressure + trend
+        // PROFONT_10 baseline=9: row2 y=ind_card_y+38 → cell_top=29 ≥ 1 ✓
+        if let Some(p) = state.indoor_pressure {
+            let correction = state.pressure_history.delta_owm_bme_stable().unwrap_or(0.0);
+            let p_text = format!("{:.1} hPa", p + correction);
+            Text::new(&p_text, Point::new(CARD_MARGIN + 8, ind_card_y + 48), ind_small).draw(fb).ok();
+        }
+        if state.indoor_pressure.is_some() {
+            if let Some((delta, label)) = state.pressure_history.pressure_trend() {
+                let sign = if delta >= 0.0 { "+" } else { "" };
+                let trend_text = format!("{}h: {}{:.1}", label.trim_end_matches('h'), sign, delta);
+                Text::new(&trend_text, Point::new(CARD_MARGIN + 100, ind_card_y + 48), ind_small).draw(fb).ok();
+            }
+        }
 
-        if state.orientation.is_portrait() {
-            // "Forecast >" header only in portrait (landscape uses full-width columns)
-            let label_style = MonoTextStyle::new(&PROFONT_12_POINT, TEXT_HEADER);
-            Text::new("Forecast >", Point::new(CARD_MARGIN + 8, fc_top + 14), label_style)
-                .draw(fb)
-                .ok();
+        // Forecast card
+        let fc_card_y = ind_card_y + ind_card_h + 6;  // 198+60+6 = 264
+        let fc_card_h = screen_h - fc_card_y - 20;    // 480-264-20 = 196
+        draw_card(fb, CARD_MARGIN, fc_card_y, screen_w - 2 * CARD_MARGIN, fc_card_h, 10,
+                  CARD_FILL_FORECAST_PREVIEW, CARD_BORDER_FORECAST_PREVIEW, 1);
+
+        if let Some(fc) = &state.forecast {
+            let day_style  = MonoTextStyle::new(&PROFONT_14_POINT, TEXT_TERTIARY);
+            let temp_style = MonoTextStyle::new(&PROFONT_18_POINT, TEXT_PRIMARY);
+            let cond_style = MonoTextStyle::new(&PROFONT_10_POINT, TEXT_DETAIL);
             let rows = 4i32;
-            let row_h = (fc_h - 24).max(40) / rows;
+            let row_h = fc_card_h / rows;  // ~49px
             for (i, row) in fc.rows.iter().take(rows as usize).enumerate() {
-                let y = fc_top + 24 + (i as i32) * row_h;
-                row.icon.draw_36(fb, CARD_MARGIN + 10, y);
-                Text::new(&row.title, Point::new(CARD_MARGIN + 54, y + 14), day_style).draw(fb).ok();
+                // Center the row content vertically within row_h
+                let ry = fc_card_y + (i as i32) * row_h + row_h / 2;
+                // icon: 36px, centered on ry-18
+                row.icon.draw_36(fb, CARD_MARGIN + 8, ry - 18);
+                // Day name: PROFONT_14 baseline=13; baseline_y=ry-5
+                Text::new(&row.title, Point::new(CARD_MARGIN + 52, ry - 5), day_style).draw(fb).ok();
+                // Condition: PROFONT_10 below day name
+                Text::new(&row.condition, Point::new(CARD_MARGIN + 52, ry + 10), cond_style).draw(fb).ok();
+                // Temp right-aligned: PROFONT_18 baseline=17; baseline_y=ry+9
                 let temp_label = format!("{}°", row.temp_f);
                 Text::with_alignment(
                     &temp_label,
-                    Point::new(screen_w - CARD_MARGIN - 10, y + 22),
+                    Point::new(screen_w - CARD_MARGIN - 8, ry + 9),
                     temp_style,
                     Alignment::Right,
                 ).draw(fb).ok();
             }
-        } else {
-            // Landscape: "Forecast ►" label + 4 columns
+        }
+    } else {
+        // ── Landscape: single forecast strip ──────────────────────────────────
+        let fc_top = card_top + card_h + 6;
+        let fc_h   = screen_h - fc_top - 16;
+
+        draw_card(fb, CARD_MARGIN, fc_top, screen_w - 2 * CARD_MARGIN, fc_h, 10,
+                  CARD_FILL_FORECAST_PREVIEW, CARD_BORDER_FORECAST_PREVIEW, 1);
+
+        if let Some(fc) = &state.forecast {
+            let day_style  = MonoTextStyle::new(&PROFONT_10_POINT, TEXT_TERTIARY);
+            let temp_style = MonoTextStyle::new(&PROFONT_14_POINT, TEXT_SECONDARY);
+            let cond_style = MonoTextStyle::new(&PROFONT_10_POINT, TEXT_DETAIL);
             let fc_label_style = MonoTextStyle::new(&PROFONT_12_POINT, TEXT_HEADER);
             Text::new("Forecast >", Point::new(CARD_MARGIN + 8, fc_top + 14), fc_label_style)
                 .draw(fb).ok();
             let col_w = (screen_w - 2 * CARD_MARGIN) / 4;
+            // Vertical layout within the strip (fc_h ≈ 122px):
+            //   Day name   baseline y = fc_top + 20
+            //   Icon top            y = fc_top + 28  (48px → bottom at fc_top+76)
+            //   Temp       baseline y = fc_top + 91  (PROFONT_14 h=17, 7px gap below icon)
+            //   Condition  baseline y = fc_top + 106 (PROFONT_10 h=12, 3px gap)
+            const ICON_TOP:  i32 = 28;
+            const TEMP_BASE: i32 = 91;
+            const COND_BASE: i32 = 106;
             for (i, row) in fc.rows.iter().take(4).enumerate() {
                 let cx = CARD_MARGIN + (i as i32) * col_w + col_w / 2;
-                Text::with_alignment(&row.title, Point::new(cx, fc_top + 30), day_style, Alignment::Center)
+                Text::with_alignment(&row.title, Point::new(cx, fc_top + 20), day_style, Alignment::Center)
                     .draw(fb).ok();
-                row.icon.draw_48(fb, cx - 24, fc_top + 36);
+                row.icon.draw_48(fb, cx - 24, fc_top + ICON_TOP);
                 let temp_label = format!("{}°", row.temp_f);
-                Text::with_alignment(&temp_label, Point::new(cx, fc_top + fc_h - 8), temp_style, Alignment::Center)
+                Text::with_alignment(&temp_label, Point::new(cx, fc_top + TEMP_BASE), temp_style, Alignment::Center)
+                    .draw(fb).ok();
+                Text::with_alignment(&row.condition, Point::new(cx, fc_top + COND_BASE), cond_style, Alignment::Center)
                     .draw(fb).ok();
             }
         }
@@ -369,12 +451,23 @@ fn draw_alert_overlay(fb: &mut Framebuffer, state: &AppState, screen_w: i32, scr
         let raw = raw.trim();
         if !raw.starts_with('*') { continue; }
         let content = raw.trim_start_matches('*').trim();
-        let line = if content.len() + 2 > max_chars {
-            format!("- {}...", &content[..max_chars.saturating_sub(5)])
+        // Draw "- " prefix and content as separate draws to avoid format! in the
+        // hot render path.  Use char-aware truncation to avoid panicking on
+        // multi-byte UTF-8 characters (degree signs, smart quotes, em-dashes).
+        let char_limit = max_chars.saturating_sub(2); // reserve "- "
+        let content_chars = content.chars().count();
+        if content_chars <= char_limit {
+            Text::new("- ", Point::new(CARD_MARGIN + 8, row_y), dim_style).draw(fb).ok();
+            Text::new(content, Point::new(CARD_MARGIN + 8 + 12, row_y), dim_style).draw(fb).ok();
         } else {
-            format!("- {}", content)
-        };
-        Text::new(&line, Point::new(CARD_MARGIN + 8, row_y), dim_style).draw(fb).ok();
+            let end = content.char_indices()
+                .nth(char_limit.saturating_sub(3))
+                .map(|(i, _)| i)
+                .unwrap_or(content.len());
+            Text::new("- ", Point::new(CARD_MARGIN + 8, row_y), dim_style).draw(fb).ok();
+            Text::new(&content[..end], Point::new(CARD_MARGIN + 8 + 12, row_y), dim_style).draw(fb).ok();
+            Text::new("...", Point::new(CARD_MARGIN + 8 + 12 + (char_limit as i32 - 3) * 6, row_y), dim_style).draw(fb).ok();
+        }
         row_y += line_h;
     }
 

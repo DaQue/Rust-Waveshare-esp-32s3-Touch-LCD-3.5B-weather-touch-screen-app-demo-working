@@ -1,5 +1,6 @@
 use anyhow::{bail, Result};
 use esp_idf_svc::http::client::{Configuration, EspHttpConnection};
+use embedded_svc::http::Method;
 use log::info;
 use std::sync::{Mutex, OnceLock};
 use std::sync::atomic::Ordering;
@@ -13,6 +14,43 @@ const MAX_RESPONSE_SIZE: usize = 32_768;
 // ~16KB of internal SRAM free for mbedTLS TLS contexts (~40KB each), which
 // would otherwise fail to allocate after the body buffer fills internal SRAM.
 static BODY_BUF: OnceLock<Mutex<PsramBuf>> = OnceLock::new();
+
+// Per-host persistent HTTP/TLS sessions.
+// Reusing these avoids a full TLS handshake + DNS lookup on each weather fetch,
+// which is the primary source of lwIP TCP/DNS allocations fragmenting internal
+// SRAM over time.  On success each call stores the connection back; on error
+// it is dropped and the next call opens a fresh one.
+//
+// NOTE: we call EspHttpConnection methods directly (initiate_request /
+// initiate_response / read) rather than going through embedded_svc::Client<C>.
+// Client::wrap() panics if is_response_initiated() is true, but
+// EspHttpConnection::initiate_request() handles the Response state correctly
+// (calls flush_response + esp_http_client_set_url).  Bypassing Client<C>
+// avoids the spurious panic while still reusing the live TLS socket.
+
+/// Newtype wrapper so EspHttpConnection can be stored in a static Mutex.
+///
+/// SAFETY: EspHttpConnection wraps an esp_http_client_handle_t (an opaque
+/// ESP-IDF handle).  It is NOT safe to use from multiple threads concurrently,
+/// but it IS safe to *transfer* between threads — which is all Send requires.
+/// Access is serialised by the Mutex below; we never touch the handle from two
+/// threads at the same time.
+struct HttpConn(EspHttpConnection);
+unsafe impl Send for HttpConn {}
+
+static SESSION_OWM:  OnceLock<Mutex<Option<HttpConn>>> = OnceLock::new();
+static SESSION_NWS:  OnceLock<Mutex<Option<HttpConn>>> = OnceLock::new();
+static SESSION_MISC: OnceLock<Mutex<Option<HttpConn>>> = OnceLock::new();
+
+fn get_session(url: &str) -> &'static Mutex<Option<HttpConn>> {
+    if url.contains("openweathermap.org") {
+        SESSION_OWM.get_or_init(|| Mutex::new(None))
+    } else if url.contains("weather.gov") {
+        SESSION_NWS.get_or_init(|| Mutex::new(None))
+    } else {
+        SESSION_MISC.get_or_init(|| Mutex::new(None))
+    }
+}
 
 fn body_buf() -> &'static Mutex<PsramBuf> {
     BODY_BUF.get_or_init(|| Mutex::new(PsramBuf::new()))
@@ -83,16 +121,60 @@ fn make_config() -> Configuration {
     }
 }
 
-/// Do the actual HTTP GET and stream the body into `buf`.
+/// Inner fetch: drives the request/response cycle on a raw EspHttpConnection.
 ///
-/// Separated into its own function so that the large stack frame
-/// (EspHttpConnection, Client, Response, chunk[1024]) is fully popped off
-/// the stack before the caller invokes the parse callback.  In debug builds
-/// inner scopes do NOT shrink the frame — only a function return does.
-fn http_fetch_into(url: &str, headers: &[(&str, &str)], buf: &mut PsramBuf) -> Result<()> {
-    use embedded_svc::http::client::Client;
-    use embedded_svc::http::Method;
+/// Calls initiate_request → initiate_response → read loop directly, bypassing
+/// embedded_svc::Client<C>::wrap() which panics on reused (Response-state)
+/// connections.  EspHttpConnection::initiate_request() handles the Response
+/// state correctly by flushing the prior response before re-opening the socket.
+///
+/// On return the connection is in Response state and ready to be stored back
+/// for the next reuse.  On error the connection should be dropped.
+fn do_fetch(
+    conn: &mut EspHttpConnection,
+    url: &str,
+    headers: &[(&str, &str)],
+    buf: &mut PsramBuf,
+) -> Result<()> {
+    conn.initiate_request(Method::Get, url, headers)?;
+    conn.initiate_response()?;
 
+    let status = conn.status();
+    info!(
+        "HTTP GET {} -> status {}",
+        url.chars().take(80).collect::<String>(),
+        status
+    );
+
+    if status == 429 {
+        bail!("API rate limited (HTTP 429)");
+    }
+    if status != 200 {
+        bail!("HTTP error: status {}", status);
+    }
+
+    let mut chunk = [0u8; 1024];
+    loop {
+        let n = conn.read(&mut chunk)?;
+        if n == 0 {
+            break;
+        }
+        if !buf.extend_from_slice(&chunk[..n]) {
+            bail!("Response too large (>{}B)", MAX_RESPONSE_SIZE);
+        }
+    }
+    Ok(())
+} // connection is in Response state here — initiate_request() will handle on next reuse
+
+/// Do the actual HTTP GET, reusing a persistent TLS session when available.
+///
+/// On success the connection is stored back for the next call.
+/// On failure the connection is dropped; the next call opens a fresh one.
+///
+/// Separated from the public API so the large stack frame
+/// (EspHttpConnection, chunk[1024]) is fully popped before the
+/// caller's parse callback runs.
+fn http_fetch_into(url: &str, headers: &[(&str, &str)], buf: &mut PsramBuf) -> Result<()> {
     let free_internal = unsafe {
         esp_idf_sys::heap_caps_get_free_size(esp_idf_sys::MALLOC_CAP_INTERNAL)
     };
@@ -140,45 +222,45 @@ fn http_fetch_into(url: &str, headers: &[(&str, &str)], buf: &mut PsramBuf) -> R
         crate::SRAM_DO_REBOOT.store(true, Ordering::Relaxed);
     }
 
-    // Hard bail if essentially nothing is left contiguous.
-    if largest_block < 4_000 {
+    let session = get_session(url);
+    let mut session_guard = session
+        .lock()
+        .map_err(|_| anyhow::anyhow!("HTTP session lock poisoned"))?;
+
+    let is_new_connection = session_guard.is_none();
+
+    // Hard bail on SRAM fragmentation only when we need a new TLS handshake.
+    // If a connection is already open we can reuse it without touching SRAM.
+    if is_new_connection && largest_block < 4_000 {
         bail!(
             "SRAM too fragmented for TLS ({} KB largest block)",
             largest_block / 1024
         );
     }
 
-    let connection = EspHttpConnection::new(&make_config())?;
-    let mut client = Client::wrap(connection);
-    let request = client.request(Method::Get, url, headers)?.submit()?;
-
-    let status = request.status();
-    info!(
-        "HTTP GET {} -> status {}",
-        url.chars().take(80).collect::<String>(),
-        status
-    );
-
-    if status == 429 {
-        bail!("API rate limited (HTTP 429)");
-    }
-    if status != 200 {
-        bail!("HTTP error: status {}", status);
-    }
-
-    let mut chunk = [0u8; 1024];
-    let mut reader = request;
-    loop {
-        let n = reader.read(&mut chunk)?;
-        if n == 0 {
-            break;
+    let mut connection = match session_guard.take() {
+        Some(HttpConn(c)) => {
+            info!("HTTP: reusing persistent connection");
+            c
         }
-        if !buf.extend_from_slice(&chunk[..n]) {
-            bail!("Response too large (>{}B)", MAX_RESPONSE_SIZE);
+        None => {
+            info!("HTTP: opening new TLS connection");
+            EspHttpConnection::new(&make_config())?
         }
+    };
+
+    let fetch_result = do_fetch(&mut connection, url, headers, buf);
+
+    if fetch_result.is_ok() {
+        *session_guard = Some(HttpConn(connection));
+        info!("HTTP: connection preserved for reuse");
+    } else {
+        info!("HTTP: connection dropped after error (will reconnect next call)");
+        // connection is dropped here → esp_http_client_cleanup()
     }
-    Ok(())
-} // connection, client, reader, chunk[1024] all freed here
+
+    fetch_result
+}
 
 /// Perform an HTTPS GET, read the entire body into a persistent PSRAM buffer
 /// (never freed — only cleared and reused), then call `f` with a `&str` view

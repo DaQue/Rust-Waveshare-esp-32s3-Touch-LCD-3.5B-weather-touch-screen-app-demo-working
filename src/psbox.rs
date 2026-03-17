@@ -183,7 +183,7 @@ impl PsramRing {
         Self { data: PsBoxSlice::new(capacity), head: 0, len: 0 }
     }
 
-    pub fn capacity(&self) -> usize { self.data.len() }
+    fn capacity(&self) -> usize { self.data.len() }
     pub fn len(&self)      -> usize { self.len }
     #[allow(dead_code)]
     pub fn is_empty(&self) -> bool  { self.len == 0 }

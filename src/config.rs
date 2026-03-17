@@ -35,7 +35,7 @@ const DEFAULT_ALERTS_BEEP: bool = true;
 const DEFAULT_ALERTS_AUTO_SCOPE: bool = true;
 const DEFAULT_FLASH_TIME: &str = "unknown";
 const DEFAULT_NWS_USER_AGENT: &str =
-    concat!("waveshare_esp32-s3-touch-lcd-3p5b/", env!("CARGO_PKG_VERSION"), " (contact: unset)");
+    concat!("waveshare_esp32-s3-touch-lcd-3p5b/", env!("CARGO_PKG_VERSION"), " (davideq@gmail.com)");
 const DEFAULT_NWS_SCOPE: &str = "area=MO";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -244,13 +244,6 @@ impl Config {
     pub fn save_use_celsius(nvs: &mut EspNvs<NvsDefault>, celsius: bool) -> Result<()> {
         nvs.set_u8(KEY_USE_CELSIUS, if celsius { 1 } else { 0 })?;
         info!("NVS saved use_celsius={}", celsius);
-        Ok(())
-    }
-
-    #[allow(dead_code)]
-    pub fn save_timezone(nvs: &mut EspNvs<NvsDefault>, tz: &str) -> Result<()> {
-        nvs.set_str(KEY_TIMEZONE, tz)?;
-        info!("NVS saved timezone={:?}", tz);
         Ok(())
     }
 

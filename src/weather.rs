@@ -33,6 +33,7 @@ pub struct ForecastRow {
     pub title: String,
     pub detail: String,
     pub temp_text: String,
+    pub condition: String,
 }
 
 #[allow(dead_code)]
@@ -45,6 +46,7 @@ pub struct HourlyEntry {
     pub time_text: String,
     pub detail: String,
     pub temp_text: String,
+    pub condition: String,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -197,7 +199,7 @@ struct NwsPointsProps {
 
 // ── Icon mapping (matches C factory exactly) ────────────────────────
 
-pub fn map_condition_to_icon(weather_id: i32, _icon_code: &str) -> WeatherIcon {
+fn map_condition_to_icon(weather_id: i32, _icon_code: &str) -> WeatherIcon {
     match weather_id {
         200..=299 => WeatherIcon::Thunderstorm,
         300..=399 => WeatherIcon::Drizzle,
@@ -255,7 +257,7 @@ fn classify_alert_kind(event: &str) -> AlertKind {
 
 // ── Parsing ─────────────────────────────────────────────────────────
 
-pub fn parse_current_weather(json: &str) -> Result<CurrentWeather> {
+fn parse_current_weather(json: &str) -> Result<CurrentWeather> {
     let root: OwmCurrentRoot = serde_json::from_str(json)?;
 
     let main = root.main.unwrap_or(OwmMain {
@@ -310,7 +312,7 @@ pub fn parse_current_weather(json: &str) -> Result<CurrentWeather> {
     })
 }
 
-pub fn parse_forecast(json: &str) -> Result<Forecast> {
+fn parse_forecast(json: &str) -> Result<Forecast> {
     let root: OwmForecastRoot = serde_json::from_str(json)?;
     // serde_json on 32KB JSON is CPU-intensive; yield before the loop so IDLE1 feeds WDT.
     unsafe { esp_idf_sys::vTaskDelay(1) };
@@ -429,12 +431,16 @@ pub fn parse_forecast(json: &str) -> Result<Forecast> {
                 time_text: format_hour_label(tm.tm_hour),
                 detail: format!("Feels {}° Wind {}", feels_i, wind_i),
                 temp_text: format!("{}°", temp_i),
+                condition: condition_short(weather_id).to_string(),
             });
         }
     }
 
-    // Skip first partial day if forecast doesn't start at midnight
-    let start_day = if days.len() > 1 && first_hour.unwrap_or(0) > 0 {
+    // Skip first day if it's a stub (fetched mid-day, only a few 3-hour slots remain).
+    // Use entry count rather than hour: a day starting at 03:00 still has 7+ entries and
+    // should not be skipped; a "today afternoon only" day has ≤3 entries and should be.
+    let _ = first_hour; // retained for context, no longer used
+    let start_day = if days.len() > 1 && days[0].hourly.len() < 4 {
         1
     } else {
         0
@@ -460,6 +466,7 @@ pub fn parse_forecast(json: &str) -> Result<Forecast> {
             title: wday_name.to_string(),
             detail: format!("{} Low {}° Wind {}", day.condition, low_i, wind_i),
             temp_text: format!("{}°", high_i),
+            condition: day.condition.clone(),
         });
 
         forecast_days.push(ForecastDay {
@@ -489,7 +496,7 @@ pub fn parse_forecast(json: &str) -> Result<Forecast> {
 }
 
 /// Fetch current weather + forecast from OpenWeatherMap.
-pub fn fetch_weather(
+pub(crate) fn fetch_weather(
     query: &str,
     api_key: &str,
 ) -> Result<(CurrentWeather, Forecast)> {
@@ -516,7 +523,7 @@ pub fn fetch_weather(
 }
 
 /// Convert an ISO-8601 timestamp like "2026-02-27T08:30:00-06:00" to "Feb 27 8:30 AM".
-pub fn format_alert_expiry(iso: &str) -> String {
+pub(crate) fn format_alert_expiry(iso: &str) -> String {
     const MONTHS: [&str; 12] = ["Jan","Feb","Mar","Apr","May","Jun",
                                  "Jul","Aug","Sep","Oct","Nov","Dec"];
     let t = match iso.find('T') {
@@ -541,7 +548,7 @@ pub fn format_alert_expiry(iso: &str) -> String {
 }
 
 /// Dump a single alert's full text to the serial console at WARN level.
-pub fn log_alert_to_console(alert: &WeatherAlert) {
+pub(crate) fn log_alert_to_console(alert: &WeatherAlert) {
     log::warn!("=== NWS ALERT: {} ===", alert.event);
     log::warn!("  Severity: {}  Urgency: {}  Certainty: {}", alert.severity, alert.urgency, alert.certainty);
     log::warn!("  Headline: {}", alert.headline);
@@ -567,7 +574,7 @@ pub fn log_alert_to_console(alert: &WeatherAlert) {
     log::warn!("=== END ALERT ===");
 }
 
-pub fn parse_nws_alerts(json: &str) -> Result<Vec<WeatherAlert>> {
+fn parse_nws_alerts(json: &str) -> Result<Vec<WeatherAlert>> {
     let root: NwsAlertsRoot = serde_json::from_str(json)?;
     let mut out = Vec::new();
     for feature in root.features.unwrap_or_default() {
@@ -601,7 +608,7 @@ pub fn parse_nws_alerts(json: &str) -> Result<Vec<WeatherAlert>> {
     Ok(out)
 }
 
-pub fn fetch_nws_alerts(scope: &str, user_agent: &str) -> Result<Vec<WeatherAlert>> {
+pub(crate) fn fetch_nws_alerts(scope: &str, user_agent: &str) -> Result<Vec<WeatherAlert>> {
     let mut scope = scope.trim().to_string();
     if let Some(rest) = scope.strip_prefix("state=") {
         scope = format!("area={}", rest);
@@ -636,12 +643,12 @@ fn discover_geo_coords(user_agent: &str) -> Result<(f64, f64)> {
     Ok((lat, lon))
 }
 
-pub fn discover_openweather_query(user_agent: &str) -> Result<String> {
+pub(crate) fn discover_openweather_query(user_agent: &str) -> Result<String> {
     let (lat, lon) = discover_geo_coords(user_agent)?;
     Ok(format!("lat={:.4}&lon={:.4}", lat, lon))
 }
 
-pub fn discover_nws_zone(user_agent: &str) -> Result<String> {
+pub(crate) fn discover_nws_zone(user_agent: &str) -> Result<String> {
     let (lat, lon) = discover_geo_coords(user_agent)?;
 
     let points_url = format!("https://api.weather.gov/points/{:.4},{:.4}", lat, lon);

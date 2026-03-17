@@ -91,9 +91,10 @@ const WIFI_DEBUG_TICKS: u32 = 100; // every 10 seconds
 const ORIENTATION_POLL_TICKS: u32 = 2; // every 200ms
 const ORIENTATION_SWITCH_MARGIN_G: f32 = 0.25; // one axis must dominate by this much
 const ORIENTATION_MAX_Z_G: f32 = 0.90;         // bail if nearly flat (z > 0.9g)
-const ORIENTATION_MIN_AXIS_G: f32 = 0.70;      // dominant axis needs deliberate tilt
-const ORIENTATION_CONFIRM_SAMPLES: u8 = 15;    // 15 × 200ms = 3s sustained tilt required
-const ORIENTATION_CHANGE_COOLDOWN_MS: u32 = 5_000; // 5s between changes
+const ORIENTATION_MIN_AXIS_G: f32 = 0.75;      // dominant axis needs deliberate tilt
+const ORIENTATION_SIGN_THRESHOLD_G: f32 = 0.20; // axis must be clearly +/- to resolve normal vs flipped
+const ORIENTATION_CONFIRM_SAMPLES: u8 = 25;    // 25 × 200ms = 5s sustained tilt required
+const ORIENTATION_CHANGE_COOLDOWN_MS: u32 = 10_000; // 10s between changes
 const WIFI_RETRY_INTERVAL_MS: u32 = 300_000;
 const FAILURE_WARN_EVERY: u32 = 10;
 
@@ -356,16 +357,20 @@ fn detect_orientation_from_imu(r: &qmi8658::ImuReading) -> Option<layout::Orient
     }
     if ax > ay + ORIENTATION_SWITCH_MARGIN_G {
         // For this board mounting, +X tilt corresponds to upside-down portrait.
-        if r.accel_x >= 0.0 {
+        if r.accel_x < -ORIENTATION_SIGN_THRESHOLD_G {
+            Some(layout::Orientation::Portrait)
+        } else if r.accel_x > ORIENTATION_SIGN_THRESHOLD_G {
             Some(layout::Orientation::PortraitFlipped)
         } else {
-            Some(layout::Orientation::Portrait)
+            None // sign ambiguous — ignore
         }
     } else if ay > ax + ORIENTATION_SWITCH_MARGIN_G {
-        if r.accel_y < 0.0 {
+        if r.accel_y < -ORIENTATION_SIGN_THRESHOLD_G {
             Some(layout::Orientation::Landscape)
-        } else {
+        } else if r.accel_y > ORIENTATION_SIGN_THRESHOLD_G {
             Some(layout::Orientation::LandscapeFlipped)
+        } else {
+            None // sign ambiguous — ignore
         }
     } else {
         None
@@ -1292,6 +1297,7 @@ fn main() -> Result<()> {
     let mut last_hvac_record_ms: u32 = 0;
     let mut last_pressure_sample_ms: u32 = 0;
     let mut tick_count: u32 = 0;
+    let mut render_sram_low_streak: u8 = 0;
     let mut orientation_candidate = state.orientation;
     let mut orientation_candidate_count: u8 = 0;
     let mut last_orientation_change_ms: u32 = now_ms();
@@ -1308,9 +1314,15 @@ fn main() -> Result<()> {
 
     std::thread::Builder::new()
         .name("render".into())
-        .stack_size(16384)
+        .stack_size(24576)
         .spawn(move || {
             let mut current_orientation = layout::Orientation::Landscape;
+            // fb_orientation tracks the actual framebuffer pixel dimensions so
+            // flush_to_panel always receives an orientation that matches the FB.
+            // It diverges from current_orientation when a realloc is skipped due
+            // to low DMA memory — in that case we keep flushing with the old
+            // orientation until a realloc succeeds.
+            let mut fb_orientation = layout::Orientation::Landscape;
             loop {
                 let snapshot = match render_rx.recv() {
                     Ok(s) => s,
@@ -1335,21 +1347,27 @@ fn main() -> Result<()> {
                         // Framebuffer::new() allocates a 12.5 KB DMA buffer; if the
                         // largest free DMA block is too small the assert inside will
                         // panic and crash the render thread.  Skip the realloc and
-                        // keep the current framebuffer — the view will render at the
-                        // wrong dimensions until the next successful realloc.
+                        // keep the current framebuffer — flush uses fb_orientation
+                        // (the old orientation) until a realloc eventually succeeds.
                         let dma_free = unsafe {
                             esp_idf_sys::heap_caps_get_largest_free_block(
                                 esp_idf_sys::MALLOC_CAP_DMA,
                             )
                         };
-                        if dma_free >= 15_000 {
+                        if dma_free >= 13_000 {
                             fb = framebuffer::Framebuffer::new(w, h);
+                            fb_orientation = snapshot.orientation;
                         } else {
                             log::warn!(
                                 "orientation change: skipping FB realloc — DMA free only {} bytes",
                                 dma_free
                             );
+                            // fb_orientation intentionally NOT updated: FB still has
+                            // old dimensions, flush must use the old orientation.
                         }
+                    } else {
+                        // Same pixel dimensions (e.g. Landscape <-> LandscapeFlipped).
+                        fb_orientation = snapshot.orientation;
                     }
                     current_orientation = snapshot.orientation;
                 }
@@ -1358,8 +1376,15 @@ fn main() -> Result<()> {
                 // and the post-flush yield alone is too late if draw takes
                 // longer than the WDT timeout under PSRAM bus contention.
                 unsafe { esp_idf_sys::vTaskDelay(1) };
+                // If a realloc was skipped (DMA too low), fb_orientation still
+                // reflects the old dimensions.  Override snapshot.orientation so
+                // views render at the correct size and don't write out-of-bounds.
+                let mut snapshot = snapshot;
+                if snapshot.orientation != fb_orientation {
+                    snapshot.orientation = fb_orientation;
+                }
                 views::draw_current_view(&mut fb, &snapshot);
-                ctx.flush_fb(&fb, snapshot.orientation);
+                ctx.flush_fb(&fb, fb_orientation);
                 // Yield after flush as well (belt-and-suspenders).
                 unsafe { esp_idf_sys::vTaskDelay(1) };
             }
@@ -1467,7 +1492,15 @@ fn main() -> Result<()> {
         }
 
         // Periodic NVS history save (every 30 min) so data survives unexpected resets.
+        // Wait for render flush to complete first: NVS writes disable the flash cache
+        // on CPU1 via IPC; if the render thread's DMA ISR is executing from flash at
+        // that moment, the IPC pause times out and fires the Interrupt WDT.
         if t.wrapping_sub(last_nvs_save_ms) >= 30 * 60 * 1_000 {
+            let mut waited = 0u32;
+            while debug_flags::RENDER_FLUSH_ACTIVE.load(Ordering::Acquire) && waited < 500 {
+                unsafe { esp_idf_sys::vTaskDelay(1) };
+                waited += 1;
+            }
             history_nvs_save(&state, &nvs);
             last_nvs_save_ms = t;
         }
@@ -1475,6 +1508,11 @@ fn main() -> Result<()> {
         // Manual history save requested from console (`history save`).
         if debug_flags::REQUEST_HISTORY_SAVE.swap(false, Ordering::Relaxed) {
             log::info!("console: manual history save requested");
+            let mut waited = 0u32;
+            while debug_flags::RENDER_FLUSH_ACTIVE.load(Ordering::Acquire) && waited < 500 {
+                unsafe { esp_idf_sys::vTaskDelay(1) };
+                waited += 1;
+            }
             history_nvs_save(&state, &nvs);
             last_nvs_save_ms = t; // reset periodic timer too
             log::info!("console: history save complete");
@@ -1793,8 +1831,13 @@ fn main() -> Result<()> {
             state.dirty = true;
         }
 
-        // Trigger WiFi scan when user navigates to WifiScan view
-        if state.current_view == views::View::WifiScan && prev_view != views::View::WifiScan {
+        // Trigger WiFi scan when user navigates to WifiScan view.
+        // We only SET the flag here; execution is intentionally deferred to the
+        // NEXT tick so the render thread can draw "Scanning..." before the
+        // blocking scan freezes the main loop.
+        let wifi_scan_triggered_this_tick =
+            state.current_view == views::View::WifiScan && prev_view != views::View::WifiScan;
+        if wifi_scan_triggered_this_tick {
             state.wifi_networks.clear();
             state.wifi_scan_pending = true;
             debug_flags::REQUEST_WIFI_SCAN.store(true, Ordering::Relaxed);
@@ -1802,8 +1845,10 @@ fn main() -> Result<()> {
         }
         prev_view = state.current_view;
 
-        // WiFi scan execution
-        if debug_flags::REQUEST_WIFI_SCAN.swap(false, Ordering::Relaxed) {
+        // WiFi scan execution — skip if the flag was set THIS tick (defer one tick).
+        // Console-triggered scans (wifi scan command) bypass the trigger path so
+        // wifi_scan_triggered_this_tick is false and they run immediately as before.
+        if !wifi_scan_triggered_this_tick && debug_flags::REQUEST_WIFI_SCAN.swap(false, Ordering::Relaxed) {
             if let Some(wifi) = wifi_handle.as_mut() {
                 state.wifi_networks = wifi::scan_wifi(wifi.as_mut(), sysloop.clone());
             }
@@ -1818,6 +1863,26 @@ fn main() -> Result<()> {
             if let Ok(mut nvs) = nvs.try_lock() {
                 let _ = config::Config::save_use_celsius(&mut nvs, state.use_celsius);
                 state.save_celsius_pref = false;
+            }
+        }
+        if state.save_orientation_pref {
+            if let Ok(mut nvs) = nvs.try_lock() {
+                let _ = config::Config::save_orientation_mode(&mut nvs, state.orientation_mode);
+                state.save_orientation_pref = false;
+                // Apply the new orientation immediately (Settings tap only saves pref;
+                // without this the display would not rotate until reboot).
+                if state.orientation_mode != config::OrientationMode::Auto {
+                    let target = locked_orientation(state.orientation_mode, state.orientation_flip);
+                    if state.orientation != target {
+                        apply_orientation(&mut state, target);
+                        last_orientation_change_ms = now_ms();
+                        info!("Orientation locked to {:?}", state.orientation);
+                    }
+                } else {
+                    // Switching back to Auto: expire the cooldown so IMU kicks in
+                    // immediately instead of blocking for 10s.
+                    last_orientation_change_ms = 0;
+                }
             }
         }
 
@@ -1913,16 +1978,26 @@ fn main() -> Result<()> {
         // doing so during an active TLS handshake on the weather thread can
         // exhaust the heap.  The render thread keeps the previous frame and
         // we retry next tick when things settle.
-        // Also: if SRAM is below the render threshold here, trigger the proactive
-        // reboot immediately — don't wait for the next HTTP fetch to notice.
+        // Also: if SRAM stays below 12 KB for 5+ consecutive ticks (~100ms)
+        // AND we are past 5 minutes of uptime, trigger a proactive reboot.
+        // The first NWS TLS handshake (~50s) transiently dips below 12 KB
+        // for <100ms — the 5-min guard prevents false-positive reboots from
+        // that dip.  Genuine heap fragmentation happens at 15+ min.
         if state.dirty {
             let largest_sram = unsafe {
                 esp_idf_sys::heap_caps_get_largest_free_block(esp_idf_sys::MALLOC_CAP_INTERNAL)
             };
-            if largest_sram < 8_000 {
-                SRAM_DO_REBOOT.store(true, Ordering::Relaxed);
-            } else if render_tx.try_send(state.clone()).is_ok() {
-                state.dirty = false;
+            let uptime_us = unsafe { esp_idf_sys::esp_timer_get_time() };
+            if largest_sram < 12_000 && uptime_us > 300_000_000 {
+                render_sram_low_streak = render_sram_low_streak.saturating_add(1);
+                if render_sram_low_streak >= 5 {
+                    SRAM_DO_REBOOT.store(true, Ordering::Relaxed);
+                }
+            } else {
+                render_sram_low_streak = 0;
+                if render_tx.try_send(state.clone()).is_ok() {
+                    state.dirty = false;
+                }
             }
         }
 

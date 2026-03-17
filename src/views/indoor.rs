@@ -92,7 +92,7 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
 
     // Graph area
     let (graph_x, graph_y, graph_h) = if state.orientation.is_portrait() {
-        (12, 168, screen_h - 230)
+        (46, 168, screen_h - 230)  // 46 gives Y-axis labels room (right-aligned at x=42)
     } else {
         (50, 88, 180)
     };

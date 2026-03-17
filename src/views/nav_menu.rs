@@ -141,8 +141,15 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
     ).draw(fb).ok();
 
     let rects = button_rects(state.orientation);
+    // Landscape cards are 148px wide; PROFONT_12 is 7px/char → max ~21 chars.
+    // "Indoor / HVAC / Pressure" (24 chars) overflows — shorten for landscape.
+    let sensors_sub = if state.orientation.is_landscape() {
+        "Indoor / HVAC"
+    } else {
+        "Indoor / HVAC / Pressure"
+    };
     let labels   = [("Weather", "Now & Forecast"),
-                    ("Sensors", "Indoor / HVAC / Pressure"),
+                    ("Sensors", sensors_sub),
                     ("System",  "Scan & About")];
     let fills    = [CARD_FILL_FORECAST, CARD_FILL_INDOOR, CARD_FILL_I2C];
     let borders  = [CARD_BORDER_FORECAST, CARD_BORDER_INDOOR, CARD_BORDER_I2C];
