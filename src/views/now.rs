@@ -18,8 +18,8 @@ fn f_to_c(f: f32) -> f32 {
 /// Returns 1 (rising), -1 (falling), or 0 (steady/insufficient data).
 fn outdoor_temp_trend(history: &crate::psbox::PsramRing) -> i8 {
     let len = history.len();
-    if len < 3 { return 0; }
-    let diff = history[len - 1] - history[len - 3];
+    if len < 2 { return 0; }
+    let diff = history[len - 1] - history[len - 2];
     if diff > 0.5 { 1 } else if diff < -0.5 { -1 } else { 0 }
 }
 
