@@ -77,7 +77,7 @@ impl TouchState {
 
     /// Poll the touch controller and return any detected gesture in the active
     /// logical screen orientation.
-    pub fn poll(
+    pub(crate) fn poll(
         &mut self,
         i2c: &mut I2cDriver<'_>,
         now_ms: u32,
@@ -273,7 +273,7 @@ fn map_swipe_for_orientation(g: Gesture, orientation: Orientation) -> Gesture {
 }
 
 /// One-time diagnostic: try multiple approaches to communicate with touch controller.
-pub fn probe(i2c: &mut I2cDriver<'_>) {
+pub(crate) fn probe(i2c: &mut I2cDriver<'_>) {
     info!("=== TOUCH PROBE START ===");
 
     // Try write_read (repeated start)

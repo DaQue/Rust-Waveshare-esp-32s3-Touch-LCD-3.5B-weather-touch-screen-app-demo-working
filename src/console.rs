@@ -9,7 +9,7 @@ static DEV_HELP: AtomicBool = AtomicBool::new(false);
 
 use crate::config::Config;
 
-pub fn spawn_console(
+pub(crate) fn spawn_console(
     nvs: Arc<Mutex<EspNvs<NvsDefault>>>,
     config: Arc<Mutex<Config>>,
     weather_refresh_flag: Arc<AtomicBool>,

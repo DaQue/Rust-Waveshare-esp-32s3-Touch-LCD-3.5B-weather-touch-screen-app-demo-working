@@ -247,13 +247,6 @@ impl Config {
         Ok(())
     }
 
-    #[allow(dead_code)]
-    pub fn save_timezone(nvs: &mut EspNvs<NvsDefault>, tz: &str) -> Result<()> {
-        nvs.set_str(KEY_TIMEZONE, tz)?;
-        info!("NVS saved timezone={:?}", tz);
-        Ok(())
-    }
-
     pub fn save_orientation_mode(
         nvs: &mut EspNvs<NvsDefault>,
         mode: OrientationMode,

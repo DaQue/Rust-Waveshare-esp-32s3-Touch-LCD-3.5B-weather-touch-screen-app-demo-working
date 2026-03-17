@@ -90,7 +90,7 @@ impl HvacDetector {
     }
 
     /// Call every `detect_period_secs` (e.g. 5s). Updates current state.
-    pub fn detect(&mut self, temp_c: f32, now_ms: u32) {
+    pub(crate) fn detect(&mut self, temp_c: f32, now_ms: u32) {
         self.fast_buf[self.fast_idx] = temp_c;
         self.fast_idx = (self.fast_idx + 1) % FAST_BUF_SIZE;
         self.fast_count = self.fast_count.min(FAST_BUF_SIZE - 1) + 1;
@@ -142,7 +142,7 @@ impl HvacDetector {
     }
 
     /// Call every `record_period_secs` (e.g. 30s). Appends current state to history.
-    pub fn record(&mut self) {
+    pub(crate) fn record(&mut self) {
         self.history[self.hist_idx] = self.current_state;
         self.hist_idx = (self.hist_idx + 1) % HISTORY_SIZE;
         if self.hist_count < HISTORY_SIZE {

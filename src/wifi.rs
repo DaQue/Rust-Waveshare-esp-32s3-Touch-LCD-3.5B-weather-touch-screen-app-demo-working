@@ -52,7 +52,7 @@ fn log_wifi_diag(label: &str) {
     }
 }
 
-pub fn connect_wifi(
+pub(crate) fn connect_wifi(
     modem: Modem,
     sysloop: EspSystemEventLoop,
     ssid: &str,
@@ -136,7 +136,7 @@ pub fn connect_wifi(
     })
 }
 
-pub fn reconnect_existing(
+pub(crate) fn reconnect_existing(
     wifi: &mut EspWifi<'static>,
     sysloop: EspSystemEventLoop,
 ) -> Result<ReconnectOutcome> {
@@ -185,7 +185,7 @@ pub fn reconnect_existing(
 
 /// Scan for nearby networks on an already-connected WiFi interface.
 /// Returns a list of (ssid, rssi) pairs sorted by signal strength.
-pub fn scan_wifi(
+pub(crate) fn scan_wifi(
     wifi: &mut EspWifi<'static>,
     sysloop: EspSystemEventLoop,
 ) -> Vec<(String, i8)> {

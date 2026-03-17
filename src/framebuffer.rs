@@ -80,7 +80,7 @@ impl Framebuffer {
     }
 
     /// Flush the landscape framebuffer to the portrait panel with 90° CW rotation.
-    pub fn flush_to_panel(
+    pub(crate) fn flush_to_panel(
         &self,
         io: esp_idf_sys::esp_lcd_panel_io_handle_t,
         panel: esp_idf_sys::esp_lcd_panel_handle_t,

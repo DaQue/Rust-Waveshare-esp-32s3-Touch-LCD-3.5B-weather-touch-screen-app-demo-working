@@ -20,7 +20,7 @@ pub enum AlertTone {
 }
 
 impl AlertTone {
-    pub fn from_request(v: i8) -> Option<Self> {
+    pub(crate) fn from_request(v: i8) -> Option<Self> {
         match v {
             0 => Some(Self::Advisory),
             1 => Some(Self::Watch),
@@ -37,7 +37,7 @@ impl AlertTone {
         }
     }
 
-    pub fn request_code(self) -> i8 {
+    pub(crate) fn request_code(self) -> i8 {
         match self {
             AlertTone::Advisory => 0,
             AlertTone::Watch => 1,
@@ -77,7 +77,7 @@ fn tca9554_write_reg(i2c: &mut I2cDriver<'_>, reg: u8, val: u8) -> Result<(), Es
     i2c.write(TCA9554_ADDR, &[reg, val], 100)
 }
 
-pub fn enable_pa(i2c: &mut I2cDriver<'_>) -> Result<(), EspError> {
+fn enable_pa(i2c: &mut I2cDriver<'_>) -> Result<(), EspError> {
     let mut config = tca9554_read_reg(i2c, TCA9554_REG_CONFIG)?;
     config &= !TCA9554_PA_CTRL_BIT;
     tca9554_write_reg(i2c, TCA9554_REG_CONFIG, config)?;
@@ -88,13 +88,13 @@ pub fn enable_pa(i2c: &mut I2cDriver<'_>) -> Result<(), EspError> {
     Ok(())
 }
 
-pub fn init_audio_path(i2c: &mut I2cDriver<'_>) -> Result<(), EspError> {
+pub(crate) fn init_audio_path(i2c: &mut I2cDriver<'_>) -> Result<(), EspError> {
     enable_pa(i2c)?;
     init_es8311(i2c)?;
     Ok(())
 }
 
-pub fn init_es8311(i2c: &mut I2cDriver<'_>) -> Result<(), EspError> {
+fn init_es8311(i2c: &mut I2cDriver<'_>) -> Result<(), EspError> {
     // Based on Espressif esp_codec_dev ES8311 open/start flow.
     write_reg(i2c, 0x44, 0x08)?;
     write_reg(i2c, 0x44, 0x08)?;
@@ -276,7 +276,7 @@ impl<'d> Speaker<'d> {
         true
     }
 
-    pub fn play<F: FnMut() -> bool>(&mut self, tone: AlertTone, mut should_stop: F) -> Result<(), EspError> {
+    pub(crate) fn play<F: FnMut() -> bool>(&mut self, tone: AlertTone, mut should_stop: F) -> Result<(), EspError> {
         match tone {
             AlertTone::Advisory => {
                 // Soft double chirp: informative, low urgency.
