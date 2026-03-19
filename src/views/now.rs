@@ -43,18 +43,6 @@ fn draw_temp_trend(fb: &mut Framebuffer, trend: i8, cx: i32, cy: i32) {
         .draw(fb).ok();
 }
 
-/// Short-term forecast label: "Rain by 3PM" or "Overcast thru 3PM".
-fn short_term_label(state: &AppState) -> Option<String> {
-    let next = state.forecast.as_ref()
-        .and_then(|fc| fc.days.first())
-        .and_then(|day| day.entries.first())?;
-    let cur = state.current_weather.as_ref().map(|cw| cw.condition.as_str()).unwrap_or("");
-    if next.condition == cur {
-        Some(format!("{} thru {}", next.condition, next.time_text))
-    } else {
-        Some(format!("{} by {}", next.condition, next.time_text))
-    }
-}
 
 /// Draw WiFi signal bars + RSSI dBm value, right-aligned at (x_right, y_base).
 fn draw_wifi_signal(fb: &mut Framebuffer, x_right: i32, y_base: i32, rssi: Option<i8>) {
@@ -193,10 +181,7 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
             draw_temp_trend(fb, trend, triangle_x, card_top + 36);
             Text::new(&feels_text, Point::new(106, card_top + 72), feels_style).draw(fb).ok();
             Text::new(&cw.condition, Point::new(106, card_top + 94), cond_style).draw(fb).ok();
-            if let Some(label) = short_term_label(state) {
-                let st_style = MonoTextStyle::new(&PROFONT_10_POINT, TEXT_DETAIL);
-                Text::new(&label, Point::new(106, card_top + 114), st_style).draw(fb).ok();
-            }
+
             let hint = if state.weather_alerts.is_empty() {
                 "(tap icon=refresh)  (tap temp=F/C)"
             } else {
@@ -219,10 +204,6 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
             // Feels like + condition
             Text::new(&feels_text, Point::new(106, card_top + 56), feels_style).draw(fb).ok();
             Text::new(&cw.condition, Point::new(106, card_top + 76), cond_style).draw(fb).ok();
-            if let Some(label) = short_term_label(state) {
-                let st_style = MonoTextStyle::new(&PROFONT_10_POINT, TEXT_DETAIL);
-                Text::new(&label, Point::new(106, card_top + 96), st_style).draw(fb).ok();
-            }
 
             // Hint row at card bottom
             let hint = if state.weather_alerts.is_empty() {

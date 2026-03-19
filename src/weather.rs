@@ -6,7 +6,6 @@ use crate::weather_icons::WeatherIcon;
 
 const WEEKDAY_SHORT: [&str; 7] = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const FORECAST_MAX_DAYS: usize = 8;
-const FORECAST_HOURLY_MAX: usize = 12;
 
 // ── Data types ──────────────────────────────────────────────────────
 
@@ -38,27 +37,8 @@ pub struct ForecastRow {
 
 #[allow(dead_code)]
 #[derive(Debug, Clone, Default)]
-pub struct HourlyEntry {
-    pub temp_f: i32,
-    pub feels_f: i32,
-    pub wind_mph: i32,
-    pub icon: WeatherIcon,
-    pub time_text: String,
-    pub detail: String,
-    pub temp_text: String,
-    pub condition: String,
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct ForecastDay {
-    pub entries: Vec<HourlyEntry>,
-}
-
-#[allow(dead_code)]
-#[derive(Debug, Clone, Default)]
 pub struct Forecast {
     pub rows: Vec<ForecastRow>,
-    pub days: Vec<ForecastDay>,
     pub preview_text: String,
 }
 
@@ -236,11 +216,6 @@ fn condition_short(weather_id: i32) -> &'static str {
     }
 }
 
-fn format_hour_label(hour24: i32) -> String {
-    let hour12 = if hour24 % 12 == 0 { 12 } else { hour24 % 12 };
-    let ampm = if hour24 >= 12 { "PM" } else { "AM" };
-    format!("{}{}", hour12, ampm)
-}
 
 fn classify_alert_kind(event: &str) -> AlertKind {
     let e = event.to_ascii_lowercase();
@@ -329,7 +304,7 @@ fn parse_forecast(json: &str) -> Result<Forecast> {
         icon: WeatherIcon,
         condition: String,
         icon_score: i32,
-        hourly: Vec<HourlyEntry>,
+        entry_count: usize,
     }
 
     let mut days: Vec<DaySummary> = Vec::new();
@@ -349,7 +324,6 @@ fn parse_forecast(json: &str) -> Result<Forecast> {
             None => continue,
         };
         let temp = main.temp.unwrap_or(0.0) as f32;
-        let feels = main.feels_like.unwrap_or(temp as f64) as f32;
         let wind_speed = entry.wind.as_ref().and_then(|w| w.speed).unwrap_or(0.0) as f32;
 
         let local_epoch = dt + tz_offset as i64;
@@ -382,7 +356,7 @@ fn parse_forecast(json: &str) -> Result<Forecast> {
                     icon: WeatherIcon::ScatteredClouds,
                     condition: "Cloudy".to_string(),
                     icon_score: -1,
-                    hourly: Vec::new(),
+                    entry_count: 0,
                 });
                 days.len() - 1
             }
@@ -419,28 +393,14 @@ fn parse_forecast(json: &str) -> Result<Forecast> {
             day.icon_score = score;
         }
 
-        if day.hourly.len() < FORECAST_HOURLY_MAX {
-            let temp_i = temp.round() as i32;
-            let feels_i = feels.round() as i32;
-            let wind_i = wind_speed.round() as i32;
-            day.hourly.push(HourlyEntry {
-                temp_f: temp_i,
-                feels_f: feels_i,
-                wind_mph: wind_i,
-                icon: mapped,
-                time_text: format_hour_label(tm.tm_hour),
-                detail: format!("Feels {}° Wind {}", feels_i, wind_i),
-                temp_text: format!("{}°", temp_i),
-                condition: condition_short(weather_id).to_string(),
-            });
-        }
+        day.entry_count += 1;
     }
 
     // Skip first day if it's a stub (fetched mid-day, only a few 3-hour slots remain).
     // Use entry count rather than hour: a day starting at 03:00 still has 7+ entries and
     // should not be skipped; a "today afternoon only" day has ≤3 entries and should be.
-    let _ = first_hour; // retained for context, no longer used
-    let start_day = if days.len() > 1 && days[0].hourly.len() < 4 {
+    let _ = first_hour;
+    let start_day = if days.len() > 1 && days[0].entry_count < 4 {
         1
     } else {
         0
@@ -450,7 +410,6 @@ fn parse_forecast(json: &str) -> Result<Forecast> {
     let row_count = available.len().min(4);
 
     let mut rows = Vec::with_capacity(row_count);
-    let mut forecast_days = Vec::with_capacity(row_count);
 
     for day in &available[..row_count] {
         let high_i = day.high_f.round() as i32;
@@ -467,10 +426,6 @@ fn parse_forecast(json: &str) -> Result<Forecast> {
             detail: format!("{} Low {}° Wind {}", day.condition, low_i, wind_i),
             temp_text: format!("{}°", high_i),
             condition: day.condition.clone(),
-        });
-
-        forecast_days.push(ForecastDay {
-            entries: day.hourly.clone(),
         });
     }
 
@@ -490,7 +445,6 @@ fn parse_forecast(json: &str) -> Result<Forecast> {
 
     Ok(Forecast {
         rows,
-        days: forecast_days,
         preview_text,
     })
 }

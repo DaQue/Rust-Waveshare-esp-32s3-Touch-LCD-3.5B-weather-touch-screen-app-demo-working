@@ -107,9 +107,6 @@ pub struct AppState {
     pub wifi_ssid: String,
     pub wifi_rssi: Option<i8>,
     pub ip_address: String,
-    pub forecast_hourly_open: bool,
-    pub forecast_hourly_day: usize,
-    pub forecast_hourly_scroll: usize,
     pub weather_alerts: Vec<crate::weather::WeatherAlert>,
     pub now_alerts_open: bool,
     pub use_celsius: bool,
@@ -152,9 +149,6 @@ impl AppState {
             wifi_ssid: String::new(),
             wifi_rssi: None,
             ip_address: String::new(),
-            forecast_hourly_open: false,
-            forecast_hourly_day: 0,
-            forecast_hourly_scroll: 0,
             weather_alerts: Vec::new(),
             now_alerts_open: false,
             use_celsius: false,
@@ -193,12 +187,6 @@ impl AppState {
             Gesture::None => false,
 
             Gesture::SwipeLeft => {
-                // Close hourly if open before navigating
-                if self.current_view == View::Forecast && self.forecast_hourly_open {
-                    self.forecast_hourly_open = false;
-                    self.dirty = true;
-                    return true;
-                }
                 // NavMenu: swipe left does nothing (use buttons or swipe right for home)
                 if self.current_view == View::NavMenu {
                     return false;
@@ -223,7 +211,6 @@ impl AppState {
                 // Move to prev view within group, or open NavMenu at any boundary
                 if let Some(prev) = self.current_view.prev() {
                     self.current_view = prev;
-                    self.forecast_hourly_open = false;
                 } else {
                     // At left edge of any group (including Now) → NavMenu
                     self.current_view = View::NavMenu;
@@ -232,31 +219,14 @@ impl AppState {
                 true
             }
 
-            Gesture::SwipeUp => {
-                if self.current_view == View::Forecast && self.forecast_hourly_open {
-                    self.forecast_hourly_scroll = self.forecast_hourly_scroll.saturating_add(4);
-                    self.dirty = true;
-                    true
-                } else {
-                    false
-                }
-            }
+            Gesture::SwipeUp => false,
 
-            Gesture::SwipeDown => {
-                if self.current_view == View::Forecast && self.forecast_hourly_open {
-                    self.forecast_hourly_scroll = self.forecast_hourly_scroll.saturating_sub(4);
-                    self.dirty = true;
-                    true
-                } else {
-                    false
-                }
-            }
+            Gesture::SwipeDown => false,
 
             Gesture::LongPress => {
                 // Long press from anywhere → NavMenu (except already there or home)
                 if self.current_view != View::NavMenu && self.current_view != View::Now {
                     self.current_view = View::NavMenu;
-                    self.forecast_hourly_open = false;
                     self.dirty = true;
                     true
                 } else {
@@ -333,7 +303,6 @@ impl AppState {
                     nav_menu::NavTap::Sensors => View::Indoor,
                     nav_menu::NavTap::System  => View::Settings,
                 };
-                self.forecast_hourly_open = false;
                 self.dirty = true;
                 return true;
             }
@@ -345,13 +314,11 @@ impl AppState {
             // Center header tap (any view) → home
             if x >= 100 && x < screen_w - 100 {
                 self.current_view = View::Now;
-                self.forecast_hourly_open = false;
                 self.dirty = true;
                 return true;
             }
             // Right header tap: advance within group (or NavMenu at boundary)
             if x >= screen_w - 100 {
-                self.forecast_hourly_open = false;
                 if let Some(next) = self.current_view.next() {
                     self.current_view = next;
                 } else {
@@ -362,7 +329,6 @@ impl AppState {
             }
             // Left header tap: go back within group, or NavMenu at any left boundary
             if x < 100 {
-                self.forecast_hourly_open = false;
                 if let Some(prev) = self.current_view.prev() {
                     self.current_view = prev;
                 } else {
@@ -470,27 +436,6 @@ impl AppState {
                 }
                 self.dirty = true;
                 return true;
-            }
-        }
-
-        // ── Forecast view taps ──
-        if self.current_view == View::Forecast {
-            // Tap on daily row → open hourly drill-down
-            if !self.forecast_hourly_open {
-                let row_top = 38i16;
-                let row_stride = 66i16;
-                if y >= row_top && y < row_top + 4 * row_stride {
-                    let row = ((y - row_top) / row_stride) as usize;
-                    if let Some(fc) = &self.forecast {
-                        if row < fc.days.len() && !fc.days[row].entries.is_empty() {
-                            self.forecast_hourly_open = true;
-                            self.forecast_hourly_day = row;
-                            self.forecast_hourly_scroll = 0;
-                            self.dirty = true;
-                            return true;
-                        }
-                    }
-                }
             }
         }
 
