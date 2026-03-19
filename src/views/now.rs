@@ -201,9 +201,11 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
             let triangle_x = 106 + temp_text.chars().count() as i32 * 16 + 10;
             draw_temp_trend(fb, trend, triangle_x, card_top + 24);
 
-            // Feels like + condition
+            // Feels like + condition + wind
             Text::new(&feels_text, Point::new(106, card_top + 56), feels_style).draw(fb).ok();
             Text::new(&cw.condition, Point::new(106, card_top + 76), cond_style).draw(fb).ok();
+            let wind_text = format!("Wind {:.0} mph", cw.wind_mph);
+            Text::new(&wind_text, Point::new(106, card_top + 96), cond_style).draw(fb).ok();
 
             // Hint row at card bottom
             let hint = if state.weather_alerts.is_empty() {
