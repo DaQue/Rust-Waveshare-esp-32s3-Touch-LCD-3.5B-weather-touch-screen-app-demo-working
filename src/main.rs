@@ -441,7 +441,9 @@ impl LcdContext {
     /// Calling a method forces the closure to capture `ctx` (whole struct, Send)
     /// rather than capturing individual raw-pointer fields (not Send).
     fn flush_fb(&self, fb: &framebuffer::Framebuffer, orientation: layout::Orientation) {
+        debug_flags::RENDER_FLUSH_ACTIVE.store(true, Ordering::Release);
         fb.flush_to_panel(self.io, self.panel, orientation);
+        debug_flags::RENDER_FLUSH_ACTIVE.store(false, Ordering::Release);
     }
 }
 
