@@ -72,9 +72,11 @@ pub fn start(
         }
 
         let mut resp = req.into_response(200, Some("OK"), HTML_HEADERS)?;
-        // Write in 4KB chunks — large single writes can overflow the HTTP task stack.
+        // Write in 4KB chunks with yields so the HTTP task doesn't hold
+        // CPU 0 for the full file duration, keeping IDLE0 fed.
         for chunk in DASHBOARD.chunks(4096) {
             resp.write(chunk)?;
+            unsafe { esp_idf_sys::vTaskDelay(1) };
         }
         Ok(())
     })?;
@@ -123,6 +125,7 @@ pub fn start(
 
         resp.write(b"[")?;
         let mut first = true;
+        let mut count = 0u32;
         for s in ring.iter_recent(hours) {
             if !first { resp.write(b",")?; }
             first = false;
@@ -136,6 +139,11 @@ pub fn start(
                 );
             }
             resp.write(buf.as_bytes())?;
+            count += 1;
+            // Yield to FreeRTOS every 100 samples so IDLE0 stays fed.
+            if count % 100 == 0 {
+                unsafe { esp_idf_sys::vTaskDelay(1) };
+            }
         }
         resp.write(b"]")?;
         Ok(())
