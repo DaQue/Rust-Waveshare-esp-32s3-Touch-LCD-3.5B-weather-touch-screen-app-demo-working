@@ -1,10 +1,42 @@
+use std::sync::{Arc, Mutex};
+
 use embedded_svc::http::Method;
 use esp_idf_svc::http::server::{Configuration as HttpConfig, EspHttpServer};
+use serde::Serialize;
+
 use crate::SRAM_ADMIT_MIN_BLOCK;
+
+/// Snapshot of current sensor + weather data served by /api/current.
+/// Updated by the main loop every 5s; read by HTTP handler under a short lock.
+#[derive(Serialize, Clone, Default)]
+pub struct WebSnapshot {
+    // Outdoor weather (None = not yet received)
+    pub temp_f:       Option<f32>,
+    pub feels_f:      Option<f32>,
+    pub wind_mph:     Option<f32>,
+    pub humidity:     Option<i32>,
+    pub condition:    Option<String>,
+    pub city:         Option<String>,
+    // Indoor sensor
+    pub indoor_temp_f:       Option<f32>,
+    pub indoor_humidity_pct: Option<f32>,
+    pub indoor_pressure_hpa: Option<f32>,
+    // System
+    pub uptime_s:   u32,
+    pub firmware:   String,
+    pub ip_address: String,
+}
+
+const CORS_HEADERS: &[(&str, &str)] = &[
+    ("Access-Control-Allow-Origin", "*"),
+    ("Content-Type", "application/json"),
+];
 
 /// Start the HTTP server on port 80. Returns the server handle — must be kept
 /// alive for the lifetime of the program. Call only after WiFi is connected.
-pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
+pub fn start(
+    snapshot: Arc<Mutex<WebSnapshot>>,
+) -> anyhow::Result<EspHttpServer<'static>> {
     let config = HttpConfig {
         stack_size: 16384,
         ..Default::default()
@@ -12,13 +44,14 @@ pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
 
     let mut server = EspHttpServer::new(&config)?;
 
+    // GET / — health check
     server.fn_handler("/", Method::Get, |req| -> Result<(), anyhow::Error> {
         let largest = unsafe {
             esp_idf_sys::heap_caps_get_largest_free_block(esp_idf_sys::MALLOC_CAP_INTERNAL)
         } as u32;
 
         if largest < SRAM_ADMIT_MIN_BLOCK {
-            log::warn!("HTTP /: admission control — largest block {} KB < {} KB threshold",
+            log::warn!("HTTP /: admission control — largest block {} KB < {} KB",
                 largest / 1024, SRAM_ADMIT_MIN_BLOCK / 1024);
             req.into_response(503, Some("Service Unavailable"), &[])?
                 .write(b"503 Low memory\n")?;
@@ -26,6 +59,28 @@ pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
             req.into_ok_response()?
                 .write(b"ESP32 OK\n")?;
         }
+        Ok(())
+    })?;
+
+    // GET /api/current — current sensor + weather snapshot as JSON
+    server.fn_handler("/api/current", Method::Get, move |req| -> Result<(), anyhow::Error> {
+        let largest = unsafe {
+            esp_idf_sys::heap_caps_get_largest_free_block(esp_idf_sys::MALLOC_CAP_INTERNAL)
+        } as u32;
+
+        if largest < SRAM_ADMIT_MIN_BLOCK {
+            log::warn!("HTTP /api/current: admission control — largest block {} KB < {} KB",
+                largest / 1024, SRAM_ADMIT_MIN_BLOCK / 1024);
+            req.into_response(503, Some("Service Unavailable"), &[])?
+                .write(b"{\"error\":\"low memory\"}\n")?;
+            return Ok(());
+        }
+
+        let data = snapshot.lock().unwrap().clone();
+        let json = serde_json::to_string(&data)?;
+
+        req.into_response(200, Some("OK"), CORS_HEADERS)?
+            .write(json.as_bytes())?;
         Ok(())
     })?;
 

@@ -999,8 +999,14 @@ fn main() -> Result<()> {
     };
 
     // ── 10a. HTTP server (after WiFi confirmed) ──
+    let web_snapshot: std::sync::Arc<std::sync::Mutex<web_server::WebSnapshot>> =
+        std::sync::Arc::new(std::sync::Mutex::new(web_server::WebSnapshot {
+            firmware:   env!("CARGO_PKG_VERSION").to_string(),
+            ip_address: ip_address.clone(),
+            ..Default::default()
+        }));
     let _http_server = if wifi_ok {
-        match web_server::start() {
+        match web_server::start(web_snapshot.clone()) {
             Ok(s) => { info!("Web server ready"); Some(s) }
             Err(e) => { log::warn!("HTTP server failed to start: {}", e); None }
         }
@@ -1339,7 +1345,8 @@ fn main() -> Result<()> {
     let mut last_orientation_change_ms: u32 = now_ms();
     let mut last_wifi_retry_ms: u32 = now_ms();
     let mut last_nvs_save_ms: u32 = now_ms();
-    let mut last_mem_log_ms:  u32 = now_ms();
+    let mut last_mem_log_ms:      u32 = now_ms();
+    let mut last_snapshot_ms:     u32 = 0;
     let mut last_weather_success_ms: Option<u32> = None;
     let mut alerts_snapshot_seen = false;
     let mut last_alert_fingerprint = String::new();
@@ -1483,6 +1490,26 @@ fn main() -> Result<()> {
                 "MEM: SRAM free={} KB largest={} KB  PSRAM free={} KB",
                 sram_free / 1024, sram_largest / 1024, psram_free / 1024
             );
+        }
+
+        // Web snapshot update (every 5s)
+        if t.wrapping_sub(last_snapshot_ms) >= 5_000 {
+            last_snapshot_ms = t;
+            let uptime_s = unsafe { esp_idf_sys::esp_timer_get_time() / 1_000_000 } as u32;
+            let mut snap = web_snapshot.lock().unwrap();
+            if let Some(ref cw) = state.current_weather {
+                snap.temp_f    = Some(cw.temp_f);
+                snap.feels_f   = Some(cw.feels_f);
+                snap.wind_mph  = Some(cw.wind_mph);
+                snap.humidity  = Some(cw.humidity);
+                snap.condition = Some(cw.condition.clone());
+                snap.city      = Some(cw.city.clone());
+            }
+            snap.indoor_temp_f       = state.indoor_temp;
+            snap.indoor_humidity_pct = state.indoor_humidity;
+            snap.indoor_pressure_hpa = state.indoor_pressure;
+            snap.uptime_s            = uptime_s;
+            snap.ip_address          = state.ip_address.clone();
         }
 
         // BME280 read (or retry init if not yet found)
