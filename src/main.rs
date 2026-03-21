@@ -1326,9 +1326,19 @@ fn main() -> Result<()> {
             // orientation until a realloc succeeds.
             let mut fb_orientation = layout::Orientation::Landscape;
             loop {
-                let snapshot = match render_rx.recv() {
-                    Ok(s) => s,
-                    Err(_) => break,
+                // Use try_recv + vTaskDelay(1) instead of recv() to avoid
+                // busy-spinning on the underlying MPMC channel atomics.
+                // recv() never yields to FreeRTOS, starving IDLE0 and
+                // triggering the Task Watchdog when the main thread is busy
+                // (e.g. during a long TLS/HTTP fetch).
+                let snapshot = loop {
+                    match render_rx.try_recv() {
+                        Ok(s) => break s,
+                        Err(std::sync::mpsc::TryRecvError::Empty) => {
+                            unsafe { esp_idf_sys::vTaskDelay(1) };
+                        }
+                        Err(std::sync::mpsc::TryRecvError::Disconnected) => return,
+                    }
                 };
                 // Only reallocate framebuffer when the logical pixel dimensions
                 // change (portrait <-> landscape).  Switching between Landscape
@@ -1398,16 +1408,29 @@ fn main() -> Result<()> {
     state.dirty = false;
 
     let mut prev_view = state.current_view;
+    let mut last_touch_ms = now_ms();
 
     loop {
         let t = now_ms();
 
         // Poll touch
         let gesture = touch_state.poll(&mut i2c, t, state.orientation);
-        if gesture != touch::Gesture::None
-            && state.handle_gesture(gesture) {
+        if gesture != touch::Gesture::None {
+            last_touch_ms = t;
+            if state.handle_gesture(gesture) {
                 info!("Gesture {:?} -> view {:?}", gesture, state.current_view);
             }
+        }
+
+        // Idle timeout: return to Now after 10 min with no touch
+        if state.current_view != views::View::Now
+            && t.wrapping_sub(last_touch_ms) >= 600_000
+        {
+            info!("Idle timeout — returning to Now");
+            state.current_view = views::View::Now;
+            state.dirty = true;
+            last_touch_ms = t;
+        }
 
         // BME280 read (or retry init if not yet found)
         // BME reset requested by SRAM watch in http_fetch_into

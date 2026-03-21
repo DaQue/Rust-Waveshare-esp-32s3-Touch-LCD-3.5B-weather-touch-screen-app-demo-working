@@ -13,7 +13,7 @@ pkill -f burn_in_capture || true
 sleep 1
 
 cd "$PROJECT_ROOT"
-cargo +esp run -Zbuild-std=std,panic_abort
+cargo +esp run -Zbuild-std=std,panic_abort 2>&1 | tee -a /tmp/esp_log.txt
 
 # Restart capture after flash (auto-detects port)
 nohup python3 /tmp/burn_in_capture.py >> /tmp/esp_log.txt 2>/tmp/capture_err.txt &
