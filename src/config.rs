@@ -21,8 +21,9 @@ const KEY_NWS_SCOPE: &str = "nws_scope";
 const KEY_NWS_ZONE: &str = "nws_zone";
 
 /// NVS keys for sensor history persistence across proactive reboots.
-pub const KEY_HIST_INDOOR: &str = "hist_indoor";
-pub const KEY_HIST_PRESS:  &str = "hist_press";
+pub const KEY_HIST_INDOOR:   &str = "hist_indoor";
+pub const KEY_HIST_PRESS:    &str = "hist_press";
+pub const KEY_HIST_DASHBOARD: &str = "hist_dash";
 
 const DEFAULT_WIFI_SSID: &str = "";
 const DEFAULT_WIFI_PASS: &str = "";

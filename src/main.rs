@@ -782,6 +782,115 @@ fn history_nvs_restore(state: &mut views::AppState, nvs: &Arc<Mutex<EspNvs<esp_i
     unsafe { esp_idf_sys::heap_caps_free(pbuf_ptr as *mut core::ffi::c_void); }
 }
 
+/// Serialise the most recent 24h of dashboard history to NVS.
+/// Uses a PSRAM-allocated buffer to avoid SRAM pressure before reboots.
+fn dashboard_history_nvs_save(
+    history: &Arc<Mutex<history_ring::HistoryRing>>,
+    nvs: &Arc<Mutex<EspNvs<esp_idf_svc::nvs::NvsDefault>>>,
+) {
+    const SAMPLE_SIZE: usize = core::mem::size_of::<history_ring::HistorySample>();
+    const N: usize = 1440; // 24h at 1 sample/min
+    let total = 8 + N * SAMPLE_SIZE; // 8-byte count prefix + samples
+
+    let buf_ptr = unsafe {
+        esp_idf_sys::heap_caps_malloc(total, esp_idf_sys::MALLOC_CAP_SPIRAM) as *mut u8
+    };
+    if buf_ptr.is_null() {
+        log::warn!("dashboard_history_nvs_save: PSRAM alloc failed ({}B), skipping", total);
+        return;
+    }
+    let buf = unsafe {
+        core::ptr::write_bytes(buf_ptr, 0, total);
+        core::slice::from_raw_parts_mut(buf_ptr, total)
+    };
+
+    let count = if let Ok(ring) = history.lock() {
+        let mut cnt = 0usize;
+        let mut off = 8usize;
+        for s in ring.iter_recent(24) {
+            if off + SAMPLE_SIZE <= total {
+                unsafe {
+                    core::ptr::copy_nonoverlapping(
+                        s as *const history_ring::HistorySample as *const u8,
+                        buf.as_mut_ptr().add(off),
+                        SAMPLE_SIZE,
+                    );
+                }
+                off += SAMPLE_SIZE;
+                cnt += 1;
+            }
+        }
+        buf[0..8].copy_from_slice(&(cnt as u64).to_le_bytes());
+        cnt
+    } else {
+        0
+    };
+
+    if count > 0 {
+        if let Ok(mut nvs_guard) = nvs.lock() {
+            if let Err(e) = nvs_guard.set_raw(config::KEY_HIST_DASHBOARD, &buf[..8 + count * SAMPLE_SIZE]) {
+                log::warn!("NVS hist_dash save failed: {:?}", e);
+            } else {
+                log::info!("NVS hist_dash saved {} samples ({} B)", count, 8 + count * SAMPLE_SIZE);
+            }
+        }
+    }
+    unsafe { esp_idf_sys::heap_caps_free(buf_ptr as *mut core::ffi::c_void); }
+}
+
+/// Restore dashboard history from a previous NVS checkpoint.
+fn dashboard_history_nvs_restore(
+    history: &Arc<Mutex<history_ring::HistoryRing>>,
+    nvs: &Arc<Mutex<EspNvs<esp_idf_svc::nvs::NvsDefault>>>,
+) {
+    const SAMPLE_SIZE: usize = core::mem::size_of::<history_ring::HistorySample>();
+    const N: usize = 1440;
+    let total = 8 + N * SAMPLE_SIZE;
+
+    let buf_ptr = unsafe {
+        esp_idf_sys::heap_caps_malloc(total, esp_idf_sys::MALLOC_CAP_SPIRAM) as *mut u8
+    };
+    if buf_ptr.is_null() {
+        log::warn!("dashboard_history_nvs_restore: PSRAM alloc failed ({}B), skipping", total);
+        return;
+    }
+    unsafe { core::ptr::write_bytes(buf_ptr, 0, total); }
+    let buf = unsafe { core::slice::from_raw_parts_mut(buf_ptr, total) };
+
+    let loaded = if let Ok(nvs_guard) = nvs.lock() {
+        matches!(nvs_guard.get_raw(config::KEY_HIST_DASHBOARD, buf), Ok(Some(_)))
+    } else {
+        false
+    };
+
+    if !loaded {
+        log::info!("No saved dashboard history found in NVS");
+        unsafe { esp_idf_sys::heap_caps_free(buf_ptr as *mut core::ffi::c_void); }
+        return;
+    }
+
+    let cnt = (u64::from_le_bytes(buf[0..8].try_into().unwrap()) as usize).min(N);
+    if let Ok(mut ring) = history.lock() {
+        let mut off = 8usize;
+        for _ in 0..cnt {
+            if off + SAMPLE_SIZE <= total {
+                let mut sample = history_ring::HistorySample::default();
+                unsafe {
+                    core::ptr::copy_nonoverlapping(
+                        buf.as_ptr().add(off),
+                        &mut sample as *mut history_ring::HistorySample as *mut u8,
+                        SAMPLE_SIZE,
+                    );
+                }
+                ring.push(sample);
+                off += SAMPLE_SIZE;
+            }
+        }
+        log::info!("Restored {} dashboard history samples from NVS", cnt);
+    }
+    unsafe { esp_idf_sys::heap_caps_free(buf_ptr as *mut core::ffi::c_void); }
+}
+
 // ── Entry point ─────────────────────────────────────────────────────
 
 fn main() -> Result<()> {
@@ -1069,6 +1178,7 @@ fn main() -> Result<()> {
     };
     // Restore sensor history from NVS (populated by proactive reboot path)
     history_nvs_restore(&mut state, &nvs);
+    dashboard_history_nvs_restore(&history, &nvs);
 
     state.i2c_devices = i2c_devices;
     state.wifi_ssid = wifi_ssid.clone();
@@ -1638,6 +1748,7 @@ fn main() -> Result<()> {
                 waited += 1;
             }
             history_nvs_save(&state, &nvs);
+            dashboard_history_nvs_save(&history, &nvs);
             last_nvs_save_ms = t;
         }
 
@@ -1650,6 +1761,7 @@ fn main() -> Result<()> {
                 waited += 1;
             }
             history_nvs_save(&state, &nvs);
+            dashboard_history_nvs_save(&history, &nvs);
             last_nvs_save_ms = t; // reset periodic timer too
             log::info!("console: history save complete");
         }
@@ -1658,6 +1770,7 @@ fn main() -> Result<()> {
         if SRAM_DO_REBOOT.load(Ordering::Relaxed) {
             log::warn!("SRAM_DO_REBOOT: saving history to NVS then rebooting...");
             history_nvs_save(&state, &nvs);
+            dashboard_history_nvs_save(&history, &nvs);
             unsafe { esp_idf_sys::esp_restart(); }
         }
 
