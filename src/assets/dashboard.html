@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ESP32 Dashboard</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#0d1117;color:#e6edf3;font-family:system-ui,sans-serif;padding:12px;max-width:900px;margin:0 auto}
+h1{font-size:1.1rem;color:#7d8590;font-weight:400;margin-bottom:12px}
+h1 span{color:#58a6ff}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:16px}
+.card{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:12px}
+.card .label{font-size:.7rem;color:#7d8590;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px}
+.card .value{font-size:1.6rem;font-weight:600;color:#e6edf3}
+.card .value.big{font-size:2rem}
+.card .unit{font-size:.8rem;color:#7d8590;margin-left:2px}
+.card .sub{font-size:.75rem;color:#7d8590;margin-top:2px}
+.card.accent{border-color:#1f6feb}
+.section-title{font-size:.75rem;color:#7d8590;text-transform:uppercase;letter-spacing:.08em;margin:16px 0 8px}
+.chart-wrap{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:12px}
+svg text{font-family:system-ui,sans-serif}
+.legend{display:flex;gap:16px;margin-bottom:8px;flex-wrap:wrap}
+.legend-item{display:flex;align-items:center;gap:5px;font-size:.72rem;color:#7d8590}
+.legend-dot{width:10px;height:3px;border-radius:2px}
+.status{font-size:.7rem;color:#7d8590;margin-top:12px;text-align:right}
+.stale{color:#f85149}
+</style>
+</head>
+<body>
+<h1>ESP32 Weather &nbsp;<span id="city">—</span></h1>
+
+<div class="section-title">Outdoor</div>
+<div class="grid" id="outdoor-grid">
+  <div class="card accent">
+    <div class="label">Temperature</div>
+    <div class="value big" id="temp">—<span class="unit">°F</span></div>
+    <div class="sub" id="feels">Feels like —</div>
+  </div>
+  <div class="card">
+    <div class="label">Condition</div>
+    <div class="value" style="font-size:1rem;padding-top:6px" id="condition">—</div>
+  </div>
+  <div class="card">
+    <div class="label">Humidity</div>
+    <div class="value" id="hum-out">—<span class="unit">%</span></div>
+  </div>
+  <div class="card">
+    <div class="label">Wind</div>
+    <div class="value" id="wind">—<span class="unit">mph</span></div>
+  </div>
+</div>
+
+<div class="section-title">Indoor</div>
+<div class="grid">
+  <div class="card accent">
+    <div class="label">Temperature</div>
+    <div class="value big" id="in-temp">—<span class="unit">°F</span></div>
+  </div>
+  <div class="card">
+    <div class="label">Humidity</div>
+    <div class="value" id="in-hum">—<span class="unit">%</span></div>
+  </div>
+  <div class="card">
+    <div class="label">Pressure</div>
+    <div class="value" style="font-size:1.2rem" id="in-press">—<span class="unit">hPa</span></div>
+  </div>
+</div>
+
+<div class="section-title">24h Indoor History</div>
+<div class="chart-wrap">
+  <div class="legend">
+    <div class="legend-item"><div class="legend-dot" style="background:#58a6ff"></div>Temp °F</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#3fb950"></div>Humidity %</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#d2a8ff"></div>Pressure hPa</div>
+  </div>
+  <svg id="chart" width="100%" height="200" viewBox="0 0 860 200" preserveAspectRatio="none"></svg>
+</div>
+
+<div class="status" id="status">Loading…</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const fmt = (v, d) => v == null ? '—' : v.toFixed(d);
+
+function setVal(id, v, d=1) {
+  const el = $(id);
+  const unit = el.querySelector('.unit');
+  if (v == null) { el.childNodes[0].textContent = '—'; return; }
+  el.childNodes[0].textContent = v.toFixed(d);
+  if (unit) unit.textContent = unit.textContent; // keep unit
+}
+
+async function fetchCurrent() {
+  try {
+    const r = await fetch('/api/current');
+    const d = await r.json();
+    $('city').textContent = d.city || '—';
+    setVal('temp', d.temp_f, 1);
+    $('feels').textContent = d.feels_f != null ? 'Feels like ' + d.feels_f.toFixed(1) + '°F' : '';
+    $('condition').textContent = d.condition || '—';
+    setVal('hum-out', d.humidity, 0);
+    setVal('wind', d.wind_mph, 1);
+    setVal('in-temp', d.indoor_temp_f, 1);
+    setVal('in-hum', d.indoor_humidity_pct, 1);
+    setVal('in-press', d.indoor_pressure_hpa, 1);
+    $('status').className = 'status';
+    $('status').textContent = 'Updated ' + new Date().toLocaleTimeString() +
+      ' · ' + d.firmware + ' · ' + d.ip_address +
+      ' · uptime ' + fmtUptime(d.uptime_s);
+  } catch(e) {
+    $('status').className = 'status stale';
+    $('status').textContent = 'Fetch failed: ' + e;
+  }
+}
+
+function fmtUptime(s) {
+  if (!s) return '—';
+  const h = Math.floor(s/3600), m = Math.floor((s%3600)/60);
+  return h + 'h ' + m + 'm';
+}
+
+// SVG line chart — draws up to 3 normalised series
+function drawChart(samples) {
+  const svg = $('chart');
+  const W=860, H=200, PL=38, PR=8, PT=8, PB=20;
+  const cw=W-PL-PR, ch=H-PT-PB;
+  if (!samples.length) { svg.innerHTML='<text x="430" y="100" fill="#7d8590" text-anchor="middle" font-size="12">No data yet</text>'; return; }
+
+  const tf = samples.map(s=>s.tf);
+  const hf = samples.map(s=>s.h);
+  const pf = samples.map(s=>s.p);
+
+  function range(arr) {
+    let mn=arr[0],mx=arr[0];
+    for(const v of arr){if(v<mn)mn=v;if(v>mx)mx=v;}
+    const pad=(mx-mn)*0.1||1;
+    return [mn-pad, mx+pad];
+  }
+
+  const [tmin,tmax]=range(tf);
+  const [hmin,hmax]=range(hf);
+  const [pmin,pmax]=range(pf);
+
+  function poly(arr, mn, mx, color) {
+    const pts = arr.map((v,i)=>{
+      const x = PL + (i/(arr.length-1||1))*cw;
+      const y = PT + ch - ((v-mn)/(mx-mn||1))*ch;
+      return x.toFixed(1)+','+y.toFixed(1);
+    });
+    return `<polyline points="${pts.join(' ')}" fill="none" stroke="${color}" stroke-width="1.5" stroke-linejoin="round"/>`;
+  }
+
+  // Y-axis labels (temp scale on left)
+  const steps=4;
+  let yLabels='';
+  for(let i=0;i<=steps;i++){
+    const v=tmin+(tmax-tmin)*(i/steps);
+    const y=PT+ch-(i/steps)*ch;
+    yLabels+=`<text x="${PL-4}" y="${y+4}" fill="#7d8590" font-size="9" text-anchor="end">${v.toFixed(0)}</text>`;
+    yLabels+=`<line x1="${PL}" y1="${y}" x2="${PL+cw}" y2="${y}" stroke="#21262d" stroke-width="0.5"/>`;
+  }
+
+  // X-axis time labels (first and last timestamp)
+  let xLabels='';
+  if(samples.length>1){
+    const ts0=samples[0].ts, ts1=samples[samples.length-1].ts;
+    const fmt=ts=>{const d=new Date(ts*1000);return d.getHours()+':'+(d.getMinutes()+'').padStart(2,'0');};
+    xLabels+=`<text x="${PL}" y="${H-4}" fill="#7d8590" font-size="9" text-anchor="start">${fmt(ts0)}</text>`;
+    xLabels+=`<text x="${PL+cw}" y="${H-4}" fill="#7d8590" font-size="9" text-anchor="end">${fmt(ts1)}</text>`;
+  }
+
+  svg.innerHTML = yLabels + xLabels +
+    poly(tf,tmin,tmax,'#58a6ff') +
+    poly(hf,hmin,hmax,'#3fb950') +
+    poly(pf,pmin,pmax,'#d2a8ff');
+}
+
+async function fetchHistory() {
+  try {
+    const r = await fetch('/api/history?hours=24');
+    const data = await r.json();
+    drawChart(data);
+  } catch(e) {
+    $('chart').innerHTML='<text x="430" y="100" fill="#f85149" text-anchor="middle" font-size="12">History fetch failed</text>';
+  }
+}
+
+fetchCurrent();
+fetchHistory();
+setInterval(fetchCurrent, 10000);
+setInterval(fetchHistory, 60000);
+</script>
+</body>
+</html>

@@ -53,20 +53,28 @@ pub fn start(
 
     let mut server = EspHttpServer::new(&config)?;
 
-    // GET / — health check
+    // GET / — embedded dashboard UI
     server.fn_handler("/", Method::Get, |req| -> Result<(), anyhow::Error> {
+        const DASHBOARD: &[u8] = include_str!("assets/dashboard.html").as_bytes();
+        const HTML_HEADERS: &[(&str, &str)] = &[
+            ("Content-Type", "text/html; charset=utf-8"),
+            ("Access-Control-Allow-Origin", "*"),
+        ];
+
         let largest = unsafe {
             esp_idf_sys::heap_caps_get_largest_free_block(esp_idf_sys::MALLOC_CAP_INTERNAL)
         } as u32;
 
         if largest < SRAM_ADMIT_MIN_BLOCK {
-            log::warn!("HTTP /: admission control — largest block {} KB < {} KB",
-                largest / 1024, SRAM_ADMIT_MIN_BLOCK / 1024);
             req.into_response(503, Some("Service Unavailable"), &[])?
                 .write(b"503 Low memory\n")?;
-        } else {
-            req.into_ok_response()?
-                .write(b"ESP32 OK\n")?;
+            return Ok(());
+        }
+
+        let mut resp = req.into_response(200, Some("OK"), HTML_HEADERS)?;
+        // Write in 4KB chunks — large single writes can overflow the HTTP task stack.
+        for chunk in DASHBOARD.chunks(4096) {
+            resp.write(chunk)?;
         }
         Ok(())
     })?;
