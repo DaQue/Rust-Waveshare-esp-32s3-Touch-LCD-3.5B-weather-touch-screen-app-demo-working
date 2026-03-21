@@ -2,8 +2,15 @@
 # Render thread owns drawing; main loop is lightweight.
 CONFIG_ESP_MAIN_TASK_STACK_SIZE=32768
 
-# Partition table with NVS keys partition for encrypted NVS.
-CONFIG_PARTITION_TABLE_SINGLE_APP_ENCRYPTED_NVS=y
+# Custom partition table: 256KB NVS + 4MB app (see partitions.csv).
+# NVS enlarged from default 24KB to fit 24h dashboard history (~34KB)
+# plus existing config + sensor history. App enlarged from 1MB to 4MB
+# to accommodate current 3.3MB binary and Stage 5 web assets.
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+CONFIG_PARTITION_TABLE_SINGLE_APP_ENCRYPTED_NVS=n
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+CONFIG_ESPTOOLPY_FLASHSIZE="16MB"
 
 # USB Serial/JTAG console (ESP32-S3 native USB)
 CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y

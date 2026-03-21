@@ -1,0 +1,16 @@
+# Custom partition table for Waveshare ESP32-S3-Touch-LCD-3.5B (16MB flash)
+#
+# NVS enlarged to 256KB to accommodate:
+#   - Config keys (WiFi, API, settings):   ~2 KB
+#   - Indoor temp/humidity history:        ~16 KB
+#   - Dashboard 24h history ring (1440×24B = 34 KB): ~36 KB
+#   - Pressure history:                    ~8 KB
+#   - Total used:                          ~62 KB (headroom to ~200 KB)
+#
+# App partition enlarged to 4MB to accommodate current 3.3MB binary
+# with room for web dashboard assets (Stage 5).
+#
+# Name,     Type, SubType, Offset,  Size,    Flags
+nvs,        data, nvs,     0x9000,  0x40000,
+phy_init,   data, phy,     0x49000, 0x1000,
+factory,    app,  factory, 0x50000, 0x400000,
