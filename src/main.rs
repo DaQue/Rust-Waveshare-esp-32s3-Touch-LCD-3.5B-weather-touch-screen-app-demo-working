@@ -1,4 +1,5 @@
 mod bme280_sensor;
+mod history_ring;
 mod config;
 mod console;
 mod debug_flags;
@@ -802,6 +803,13 @@ fn main() -> Result<()> {
         info!("PSRAM: {} KB available", psram_total / 1024);
     }
 
+    // ── History ring (PSRAM, ~236 KB, 7-day @ 1-min) ─────────────────
+    let history: std::sync::Arc<std::sync::Mutex<history_ring::HistoryRing>> =
+        std::sync::Arc::new(std::sync::Mutex::new(history_ring::HistoryRing::new()));
+    info!("History ring allocated ({} samples × 24 B = {} KB)",
+        history_ring::HISTORY_CAP,
+        history_ring::HISTORY_CAP * 24 / 1024);
+
     // ── 1. Board power (TCA9554 IO expander + AXP2101 PMIC + LCD reset) ──
     esp_check(unsafe { board_power_init() }, "board_power_init")?;
     info!("Power + LCD reset OK");
@@ -1347,6 +1355,7 @@ fn main() -> Result<()> {
     let mut last_nvs_save_ms: u32 = now_ms();
     let mut last_mem_log_ms:      u32 = now_ms();
     let mut last_snapshot_ms:     u32 = 0;
+    let mut last_history_ms:      u32 = 0;
     let mut last_weather_success_ms: Option<u32> = None;
     let mut alerts_snapshot_seen = false;
     let mut last_alert_fingerprint = String::new();
@@ -1510,6 +1519,28 @@ fn main() -> Result<()> {
             snap.indoor_pressure_hpa = state.indoor_pressure;
             snap.uptime_s            = uptime_s;
             snap.ip_address          = state.ip_address.clone();
+        }
+
+        // History ring push (every 60s, indoor sensor only)
+        if t.wrapping_sub(last_history_ms) >= 60_000 {
+            if let (Some(temp_f), Some(hum), Some(pres)) = (
+                state.indoor_temp,
+                state.indoor_humidity,
+                state.indoor_pressure,
+            ) {
+                last_history_ms = t;
+                let unix_s = unsafe { libc::time(core::ptr::null_mut()) } as u32;
+                let correction = state.pressure_history.delta_owm_bme_stable().unwrap_or(0.0);
+                let sample = history_ring::HistorySample {
+                    timestamp:    unix_s,
+                    temp_f,
+                    humidity_pct: hum,
+                    pressure_hpa: pres + correction,
+                    version:      history_ring::SAMPLE_VERSION,
+                    ..Default::default()
+                };
+                history.lock().unwrap().push(sample);
+            }
         }
 
         // BME280 read (or retry init if not yet found)
