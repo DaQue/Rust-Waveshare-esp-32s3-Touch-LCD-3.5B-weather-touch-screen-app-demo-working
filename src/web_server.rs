@@ -4,7 +4,15 @@ use embedded_svc::http::Method;
 use esp_idf_svc::http::server::{Configuration as HttpConfig, EspHttpServer};
 use serde::Serialize;
 
+use crate::history_ring::HistoryRing;
 use crate::SRAM_ADMIT_MIN_BLOCK;
+
+fn parse_hours_from_uri(uri: &str) -> u32 {
+    uri.find("hours=")
+        .and_then(|i| uri[i + 6..].split('&').next())
+        .and_then(|s| s.parse::<u32>().ok())
+        .unwrap_or(24)
+}
 
 /// Snapshot of current sensor + weather data served by /api/current.
 /// Updated by the main loop every 5s; read by HTTP handler under a short lock.
@@ -36,6 +44,7 @@ const CORS_HEADERS: &[(&str, &str)] = &[
 /// alive for the lifetime of the program. Call only after WiFi is connected.
 pub fn start(
     snapshot: Arc<Mutex<WebSnapshot>>,
+    history: Arc<Mutex<HistoryRing>>,
 ) -> anyhow::Result<EspHttpServer<'static>> {
     let config = HttpConfig {
         stack_size: 16384,
@@ -81,6 +90,46 @@ pub fn start(
 
         req.into_response(200, Some("OK"), CORS_HEADERS)?
             .write(json.as_bytes())?;
+        Ok(())
+    })?;
+
+    // GET /api/history?hours=N — dashboard history ring as JSON array.
+    // Streams samples oldest-first using a per-sample heapless stack buffer
+    // so no large SRAM allocation occurs regardless of sample count.
+    server.fn_handler("/api/history", Method::Get, move |req| -> Result<(), anyhow::Error> {
+        let largest = unsafe {
+            esp_idf_sys::heap_caps_get_largest_free_block(esp_idf_sys::MALLOC_CAP_INTERNAL)
+        } as u32;
+
+        if largest < SRAM_ADMIT_MIN_BLOCK {
+            log::warn!("HTTP /api/history: admission control — largest block {} KB",
+                largest / 1024);
+            req.into_response(503, Some("Service Unavailable"), &[])?
+                .write(b"{\"error\":\"low memory\"}\n")?;
+            return Ok(());
+        }
+
+        let hours = parse_hours_from_uri(req.uri());
+        let ring = history.lock().unwrap();
+        let mut resp = req.into_response(200, Some("OK"), CORS_HEADERS)?;
+
+        resp.write(b"[")?;
+        let mut first = true;
+        for s in ring.iter_recent(hours) {
+            if !first { resp.write(b",")?; }
+            first = false;
+            let mut buf = heapless::String::<128>::new();
+            {
+                use core::fmt::Write as FmtWrite;
+                let _ = write!(
+                    buf,
+                    "{{\"ts\":{},\"tf\":{:.1},\"h\":{:.1},\"p\":{:.2}}}",
+                    s.timestamp, s.temp_f, s.humidity_pct, s.pressure_hpa
+                );
+            }
+            resp.write(buf.as_bytes())?;
+        }
+        resp.write(b"]")?;
         Ok(())
     })?;
 

@@ -1123,7 +1123,7 @@ fn main() -> Result<()> {
             ..Default::default()
         }));
     let _http_server = if wifi_ok {
-        match web_server::start(web_snapshot.clone()) {
+        match web_server::start(web_snapshot.clone(), history.clone()) {
             Ok(s) => { info!("Web server ready"); Some(s) }
             Err(e) => { log::warn!("HTTP server failed to start: {}", e); None }
         }
