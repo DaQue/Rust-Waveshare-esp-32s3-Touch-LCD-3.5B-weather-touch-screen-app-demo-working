@@ -15,6 +15,7 @@ mod time_sync;
 mod views;
 mod weather;
 mod weather_icons;
+mod web_server;
 mod wifi;
 
 use anyhow::Result;
@@ -992,6 +993,16 @@ fn main() -> Result<()> {
                 log::warn!("NTP sync failed: {}", e);
                 None
             }
+        }
+    } else {
+        None
+    };
+
+    // ── 10a. HTTP server (after WiFi confirmed) ──
+    let _http_server = if wifi_ok {
+        match web_server::start() {
+            Ok(s) => { info!("Web server ready"); Some(s) }
+            Err(e) => { log::warn!("HTTP server failed to start: {}", e); None }
         }
     } else {
         None
