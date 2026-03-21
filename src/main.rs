@@ -41,6 +41,19 @@ pub static SRAM_LOW_STREAK: AtomicU32  = AtomicU32::new(0);
 /// saves history to NVS then calls esp_restart().
 pub static SRAM_DO_REBOOT:  AtomicBool = AtomicBool::new(false);
 
+// ── HTTP admission control thresholds (v0.6.0) ───────────────────────
+/// Minimum SRAM largest-free-block (bytes) to serve heavy endpoints (/api/history).
+/// Below this, return HTTP 503 for history requests; /api/current still served.
+pub const SRAM_ADMIT_MIN_BLOCK: u32 = 20_000;
+/// Minimum SRAM largest-free-block (bytes) before all non-essential HTTP returns 503.
+pub const SRAM_CRITICAL_BLOCK: u32 = 12_000;
+/// Minimum SRAM largest-free-block (bytes); if sustained for REBOOT_STREAK_COUNT
+/// consecutive main-loop checks, triggers graceful reboot.
+pub const REBOOT_THRESHOLD: u32 = 7_000;
+/// Consecutive main-loop ticks below REBOOT_THRESHOLD before graceful reboot fires.
+/// At ~5s check interval this equals ~25s of sustained critical memory pressure.
+pub const REBOOT_STREAK_COUNT: u32 = 5;
+
 // ── Display geometry (physical panel is 320x480 portrait) ───────────
 const PANEL_WIDTH: i32 = 320;
 const CHUNK_LINES: i32 = 20;
@@ -778,6 +791,16 @@ fn main() -> Result<()> {
         env!("CARGO_PKG_VERSION")
     );
 
+    // ── PSRAM availability check ──────────────────────────────────────
+    let psram_total = unsafe {
+        esp_idf_sys::heap_caps_get_total_size(esp_idf_sys::MALLOC_CAP_SPIRAM)
+    };
+    if psram_total == 0 {
+        log::error!("PSRAM not available — dashboard history storage requires PSRAM");
+    } else {
+        info!("PSRAM: {} KB available", psram_total / 1024);
+    }
+
     // ── 1. Board power (TCA9554 IO expander + AXP2101 PMIC + LCD reset) ──
     esp_check(unsafe { board_power_init() }, "board_power_init")?;
     info!("Power + LCD reset OK");
@@ -1305,6 +1328,7 @@ fn main() -> Result<()> {
     let mut last_orientation_change_ms: u32 = now_ms();
     let mut last_wifi_retry_ms: u32 = now_ms();
     let mut last_nvs_save_ms: u32 = now_ms();
+    let mut last_mem_log_ms:  u32 = now_ms();
     let mut last_weather_success_ms: Option<u32> = None;
     let mut alerts_snapshot_seen = false;
     let mut last_alert_fingerprint = String::new();
@@ -1430,6 +1454,24 @@ fn main() -> Result<()> {
             state.current_view = views::View::Now;
             state.dirty = true;
             last_touch_ms = t;
+        }
+
+        // Periodic memory stats log (every 30s)
+        if t.wrapping_sub(last_mem_log_ms) >= 30_000 {
+            last_mem_log_ms = t;
+            let sram_free = unsafe {
+                esp_idf_sys::heap_caps_get_free_size(esp_idf_sys::MALLOC_CAP_INTERNAL)
+            };
+            let sram_largest = unsafe {
+                esp_idf_sys::heap_caps_get_largest_free_block(esp_idf_sys::MALLOC_CAP_INTERNAL)
+            };
+            let psram_free = unsafe {
+                esp_idf_sys::heap_caps_get_free_size(esp_idf_sys::MALLOC_CAP_SPIRAM)
+            };
+            info!(
+                "MEM: SRAM free={} KB largest={} KB  PSRAM free={} KB",
+                sram_free / 1024, sram_largest / 1024, psram_free / 1024
+            );
         }
 
         // BME280 read (or retry init if not yet found)
