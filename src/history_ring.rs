@@ -9,7 +9,7 @@
 use crate::psbox::PsBoxSlice;
 
 pub const HISTORY_CAP: usize = 10_080;   // 7 days × 24h × 60m
-pub const SAMPLE_VERSION: u8 = 1;
+pub const SAMPLE_VERSION: u8 = 2;
 
 /// One minute of indoor sensor data. Fixed at 24 bytes (repr C, aligned).
 #[repr(C)]
@@ -19,7 +19,8 @@ pub struct HistorySample {
     pub temp_f:       f32,      // Indoor temperature °F
     pub humidity_pct: f32,      // Indoor relative humidity %
     pub pressure_hpa: f32,      // Indoor pressure hPa (altitude-corrected)
-    pub _reserved:    [u8; 4],  // Reserved for future fields
+    pub hvac_state:   u8,       // HvacState: 0=Idle 1=Heating 2=Cooling
+    pub _reserved:    [u8; 3],  // Reserved for future fields
     pub version:      u8,       // Schema version — currently SAMPLE_VERSION
     pub _pad:         [u8; 3],  // Padding to 24 bytes
 }

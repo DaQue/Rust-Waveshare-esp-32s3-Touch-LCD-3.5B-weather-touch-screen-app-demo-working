@@ -33,6 +33,12 @@ pub struct WebSnapshot {
     pub uptime_s:   u32,
     pub firmware:   String,
     pub ip_address: String,
+    // HVAC summary
+    pub hvac_heat_mins:   u32,
+    pub hvac_cool_mins:   u32,
+    pub hvac_heat_cycles: u32,
+    pub hvac_cool_cycles: u32,
+    pub hvac_state:       u8,   // 0=Idle 1=Heating 2=Cooling
 }
 
 const CORS_HEADERS: &[(&str, &str)] = &[
@@ -142,8 +148,8 @@ pub fn start(
                 use core::fmt::Write as FmtWrite;
                 let _ = write!(
                     buf,
-                    "{{\"ts\":{},\"tf\":{:.1},\"h\":{:.1},\"p\":{:.2}}}",
-                    s.timestamp, s.temp_f, s.humidity_pct, s.pressure_hpa
+                    "{{\"ts\":{},\"tf\":{:.1},\"h\":{:.1},\"p\":{:.2},\"hv\":{}}}",
+                    s.timestamp, s.temp_f, s.humidity_pct, s.pressure_hpa, s.hvac_state
                 );
             }
             resp.write(buf.as_bytes())?;

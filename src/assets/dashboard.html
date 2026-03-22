@@ -23,6 +23,7 @@ svg text{font-family:system-ui,sans-serif}
 .legend{display:flex;gap:16px;margin-bottom:8px;flex-wrap:wrap}
 .legend-item{display:flex;align-items:center;gap:5px;font-size:.72rem;color:#7d8590}
 .legend-dot{width:10px;height:3px;border-radius:2px}
+.legend-box{width:10px;height:10px;border-radius:2px;opacity:.6}
 .status{font-size:.7rem;color:#7d8590;margin-top:12px;text-align:right}
 .stale{color:#f85149}
 </style>
@@ -65,6 +66,19 @@ svg text{font-family:system-ui,sans-serif}
     <div class="label">Pressure</div>
     <div class="value" style="font-size:1.2rem" id="in-press">—<span class="unit">hPa</span></div>
   </div>
+  <div class="card">
+    <div class="label">HVAC</div>
+    <div class="value" style="font-size:1rem;padding-top:6px" id="hvac-state">—</div>
+  </div>
+</div>
+
+<div class="section-title">2h Indoor History</div>
+<div class="chart-wrap">
+  <div class="legend">
+    <div class="legend-item"><div class="legend-dot" style="background:#58a6ff"></div>Temp °F</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#3fb950"></div>Humidity %</div>
+  </div>
+  <svg id="chart2h" width="100%" height="160" viewBox="0 0 860 160" preserveAspectRatio="none"></svg>
 </div>
 
 <div class="section-title">24h Indoor History</div>
@@ -72,9 +86,15 @@ svg text{font-family:system-ui,sans-serif}
   <div class="legend">
     <div class="legend-item"><div class="legend-dot" style="background:#58a6ff"></div>Temp °F</div>
     <div class="legend-item"><div class="legend-dot" style="background:#3fb950"></div>Humidity %</div>
-    <div class="legend-item"><div class="legend-dot" style="background:#d2a8ff"></div>Pressure hPa</div>
+    <div class="legend-item"><div class="legend-box" style="background:#f85149"></div>Heat</div>
+    <div class="legend-item"><div class="legend-box" style="background:#388bfd"></div>Cool</div>
   </div>
-  <svg id="chart" width="100%" height="200" viewBox="0 0 860 200" preserveAspectRatio="none"></svg>
+  <svg id="chart24h" width="100%" height="200" viewBox="0 0 860 200" preserveAspectRatio="none"></svg>
+</div>
+
+<div class="section-title">HVAC 24h Summary</div>
+<div class="chart-wrap" style="padding:10px 12px">
+  <div id="hvac-summary" style="font-size:.85rem;color:#e6edf3;line-height:1.8">—</div>
 </div>
 
 <div class="status" id="status">Loading…</div>
@@ -88,8 +108,22 @@ function setVal(id, v, d=1) {
   const unit = el.querySelector('.unit');
   if (v == null) { el.childNodes[0].textContent = '—'; return; }
   el.childNodes[0].textContent = v.toFixed(d);
-  if (unit) unit.textContent = unit.textContent; // keep unit
+  if (unit) unit.textContent = unit.textContent;
 }
+
+function fmtUptime(s) {
+  if (!s) return '—';
+  const h = Math.floor(s/3600), m = Math.floor((s%3600)/60);
+  return h + 'h ' + m + 'm';
+}
+
+function fmtMins(m) {
+  const h = Math.floor(m/60), min = m%60;
+  return h > 0 ? h + 'h ' + min + 'm' : min + 'm';
+}
+
+const HVAC_LABELS = ['Idle', 'Heat', 'Cool'];
+const HVAC_COLORS = ['#7d8590', '#f85149', '#388bfd'];
 
 async function fetchCurrent() {
   try {
@@ -104,6 +138,9 @@ async function fetchCurrent() {
     setVal('in-temp', d.indoor_temp_f, 1);
     setVal('in-hum', d.indoor_humidity_pct, 1);
     setVal('in-press', d.indoor_pressure_hpa, 1);
+    const hv = d.hvac_state || 0;
+    $('hvac-state').textContent = HVAC_LABELS[hv] || 'Idle';
+    $('hvac-state').style.color = HVAC_COLORS[hv] || '#7d8590';
     $('status').className = 'status';
     $('status').textContent = 'Updated ' + new Date().toLocaleTimeString() +
       ' · ' + d.firmware + ' · ' + d.ip_address +
@@ -114,33 +151,28 @@ async function fetchCurrent() {
   }
 }
 
-function fmtUptime(s) {
-  if (!s) return '—';
-  const h = Math.floor(s/3600), m = Math.floor((s%3600)/60);
-  return h + 'h ' + m + 'm';
-}
-
-// SVG line chart — draws up to 3 normalised series
-function drawChart(samples) {
-  const svg = $('chart');
-  const W=860, H=200, PL=38, PR=8, PT=8, PB=20;
+// Draw temp+humidity line chart with optional HVAC background bands
+function drawLineChart(svgId, samples, W, H, showHvac) {
+  const svg = $(svgId);
+  const PL=38, PR=8, PT=8, PB=20;
   const cw=W-PL-PR, ch=H-PT-PB;
-  if (!samples.length) { svg.innerHTML='<text x="430" y="100" fill="#7d8590" text-anchor="middle" font-size="12">No data yet</text>'; return; }
+  if (!samples.length) {
+    svg.innerHTML = '<text x="430" y="'+(H/2)+'" fill="#7d8590" text-anchor="middle" font-size="12">No data yet</text>';
+    return;
+  }
 
   const tf = samples.map(s=>s.tf);
   const hf = samples.map(s=>s.h);
-  const pf = samples.map(s=>s.p);
 
   function range(arr) {
-    let mn=arr[0],mx=arr[0];
+    let mn=arr[0], mx=arr[0];
     for(const v of arr){if(v<mn)mn=v;if(v>mx)mx=v;}
     const pad=(mx-mn)*0.1||1;
     return [mn-pad, mx+pad];
   }
 
-  const [tmin,tmax]=range(tf);
-  const [hmin,hmax]=range(hf);
-  const [pmin,pmax]=range(pf);
+  const [tmin,tmax] = range(tf);
+  const [hmin,hmax] = range(hf);
 
   function poly(arr, mn, mx, color) {
     const pts = arr.map((v,i)=>{
@@ -152,37 +184,81 @@ function drawChart(samples) {
   }
 
   // Y-axis labels (temp scale on left)
-  const steps=4;
-  let yLabels='';
-  for(let i=0;i<=steps;i++){
-    const v=tmin+(tmax-tmin)*(i/steps);
-    const y=PT+ch-(i/steps)*ch;
-    yLabels+=`<text x="${PL-4}" y="${y+4}" fill="#7d8590" font-size="9" text-anchor="end">${v.toFixed(0)}</text>`;
-    yLabels+=`<line x1="${PL}" y1="${y}" x2="${PL+cw}" y2="${y}" stroke="#21262d" stroke-width="0.5"/>`;
+  let yLabels = '';
+  for(let i=0; i<=4; i++){
+    const v = tmin+(tmax-tmin)*(i/4);
+    const y = PT+ch-(i/4)*ch;
+    yLabels += `<text x="${PL-4}" y="${y+4}" fill="#7d8590" font-size="9" text-anchor="end">${v.toFixed(0)}</text>`;
+    yLabels += `<line x1="${PL}" y1="${y}" x2="${PL+cw}" y2="${y}" stroke="#21262d" stroke-width="0.5"/>`;
   }
 
-  // X-axis time labels (first and last timestamp)
-  let xLabels='';
-  if(samples.length>1){
-    const ts0=samples[0].ts, ts1=samples[samples.length-1].ts;
-    const fmt=ts=>{const d=new Date(ts*1000);return d.getHours()+':'+(d.getMinutes()+'').padStart(2,'0');};
-    xLabels+=`<text x="${PL}" y="${H-4}" fill="#7d8590" font-size="9" text-anchor="start">${fmt(ts0)}</text>`;
-    xLabels+=`<text x="${PL+cw}" y="${H-4}" fill="#7d8590" font-size="9" text-anchor="end">${fmt(ts1)}</text>`;
+  // X-axis time labels
+  let xLabels = '';
+  if(samples.length > 1){
+    const fmtT = ts => { const d=new Date(ts*1000); return d.getHours()+':'+(d.getMinutes()+'').padStart(2,'0'); };
+    xLabels += `<text x="${PL}" y="${H-4}" fill="#7d8590" font-size="9" text-anchor="start">${fmtT(samples[0].ts)}</text>`;
+    xLabels += `<text x="${PL+cw}" y="${H-4}" fill="#7d8590" font-size="9" text-anchor="end">${fmtT(samples[samples.length-1].ts)}</text>`;
   }
 
-  svg.innerHTML = yLabels + xLabels +
-    poly(tf,tmin,tmax,'#58a6ff') +
-    poly(hf,hmin,hmax,'#3fb950') +
-    poly(pf,pmin,pmax,'#d2a8ff');
+  // HVAC background bands
+  let bands = '';
+  if(showHvac && samples.length > 1) {
+    const xOf = i => PL + (i/(samples.length-1))*cw;
+    let bandStart = 0, bandState = samples[0].hv||0;
+    for(let i=1; i<=samples.length; i++){
+      const hv = i < samples.length ? (samples[i].hv||0) : -1;
+      if(hv !== bandState) {
+        if(bandState !== 0) {
+          const color = bandState===1 ? '#f85149' : '#388bfd';
+          const x0 = xOf(bandStart), x1 = xOf(i < samples.length ? i : samples.length-1);
+          bands += `<rect x="${x0.toFixed(1)}" y="${PT}" width="${(x1-x0).toFixed(1)}" height="${ch}" fill="${color}" opacity="0.15"/>`;
+        }
+        bandStart = i;
+        bandState = hv;
+      }
+    }
+  }
+
+  svg.innerHTML = bands + yLabels + xLabels +
+    poly(tf, tmin, tmax, '#58a6ff') +
+    poly(hf, hmin, hmax, '#3fb950');
+}
+
+function renderHvacSummary(samples) {
+  let heatMins=0, coolMins=0, heatCycles=0, coolCycles=0;
+  let prevHv = 0;
+  for(const s of samples){
+    const hv = s.hv||0;
+    if(hv===1) heatMins++;
+    if(hv===2) coolMins++;
+    if(hv !== prevHv){
+      if(hv===1) heatCycles++;
+      if(hv===2) coolCycles++;
+    }
+    prevHv = hv;
+  }
+  const el = $('hvac-summary');
+  if(!heatMins && !coolMins){
+    el.textContent = 'No HVAC activity recorded yet';
+    return;
+  }
+  el.innerHTML =
+    `<span style="color:#f85149">▲ Heat</span> ${fmtMins(heatMins)} &nbsp;·&nbsp; ${heatCycles} cycle${heatCycles!==1?'s':''}` +
+    `&emsp;<span style="color:#388bfd">▼ Cool</span> ${fmtMins(coolMins)} &nbsp;·&nbsp; ${coolCycles} cycle${coolCycles!==1?'s':''}`;
 }
 
 async function fetchHistory() {
   try {
     const r = await fetch('/api/history?hours=24');
     const data = await r.json();
-    drawChart(data);
+    const last2h = data.slice(-120);
+    drawLineChart('chart2h',  last2h, 860, 160, false);
+    drawLineChart('chart24h', data,   860, 200, true);
+    renderHvacSummary(data);
   } catch(e) {
-    $('chart').innerHTML='<text x="430" y="100" fill="#f85149" text-anchor="middle" font-size="12">History fetch failed</text>';
+    ['chart2h','chart24h'].forEach(id => {
+      $(id).innerHTML = '<text x="430" y="80" fill="#f85149" text-anchor="middle" font-size="12">History fetch failed</text>';
+    });
   }
 }
 

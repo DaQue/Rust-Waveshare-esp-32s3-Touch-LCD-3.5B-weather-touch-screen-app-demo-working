@@ -152,6 +152,15 @@ impl HvacDetector {
 
     pub fn state(&self) -> HvacState { self.current_state }
 
+    /// Returns current state as u8: 0=Idle, 1=Heating, 2=Cooling
+    pub fn state_u8(&self) -> u8 {
+        match self.current_state {
+            HvacState::Idle    => 0,
+            HvacState::Heating => 1,
+            HvacState::Cooling => 2,
+        }
+    }
+
     pub fn state_duration_secs(&self, now_ms: u32) -> u32 {
         now_ms.wrapping_sub(self.state_start_ms) / 1000
     }

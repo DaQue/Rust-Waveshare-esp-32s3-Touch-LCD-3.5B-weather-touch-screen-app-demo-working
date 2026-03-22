@@ -1632,6 +1632,12 @@ fn main() -> Result<()> {
             snap.indoor_pressure_hpa = state.indoor_pressure.map(|p| p + press_correction);
             snap.uptime_s            = uptime_s;
             snap.ip_address          = state.ip_address.clone();
+            let hvac_stats           = state.hvac.stats();
+            snap.hvac_state          = state.hvac.state_u8();
+            snap.hvac_heat_mins      = hvac_stats.heat.total_minutes;
+            snap.hvac_cool_mins      = hvac_stats.cool.total_minutes;
+            snap.hvac_heat_cycles    = hvac_stats.heat.cycles;
+            snap.hvac_cool_cycles    = hvac_stats.cool.cycles;
         }
 
         // History ring push (every 60s, indoor sensor only)
@@ -1649,6 +1655,7 @@ fn main() -> Result<()> {
                     temp_f,
                     humidity_pct: hum,
                     pressure_hpa: pres + correction,
+                    hvac_state:   state.hvac.state_u8(),
                     version:      history_ring::SAMPLE_VERSION,
                     ..Default::default()
                 };
