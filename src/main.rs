@@ -1473,7 +1473,14 @@ fn main() -> Result<()> {
     let mut watch_beeps_remaining: u8 = 0;
 
     // ── Render thread: owns fb + ctx, draws on demand ──
-    let (render_tx, render_rx) = std::sync::mpsc::sync_channel::<views::AppState>(1);
+    // Arc<Mutex<Option<AppState>>> replaces sync_channel to avoid the MPMC
+    // spin_light starvation bug: sync_channel's start_recv spins in a tight
+    // CPU loop (no FreeRTOS yield) when the sender has claimed a slot but
+    // not yet completed write(). The Mutex uses a proper FreeRTOS semaphore
+    // so contention always blocks rather than spinning, preventing IDLE0
+    // starvation and the resulting Task Watchdog trigger.
+    let render_slot: Arc<Mutex<Option<views::AppState>>> = Arc::new(Mutex::new(None));
+    let render_slot_thread = render_slot.clone();
 
     std::thread::Builder::new()
         .name("render".into())
@@ -1487,18 +1494,13 @@ fn main() -> Result<()> {
             // orientation until a realloc succeeds.
             let mut fb_orientation = layout::Orientation::Landscape;
             loop {
-                // Use try_recv + vTaskDelay(1) instead of recv() to avoid
-                // busy-spinning on the underlying MPMC channel atomics.
-                // recv() never yields to FreeRTOS, starving IDLE0 and
-                // triggering the Task Watchdog when the main thread is busy
-                // (e.g. during a long TLS/HTTP fetch).
+                // Mutex::lock() uses a FreeRTOS semaphore — never spins.
+                // When the slot is None, yield for one tick so IDLE0 runs.
                 let snapshot = loop {
-                    match render_rx.try_recv() {
-                        Ok(s) => break s,
-                        Err(std::sync::mpsc::TryRecvError::Empty) => {
-                            unsafe { esp_idf_sys::vTaskDelay(1) };
-                        }
-                        Err(std::sync::mpsc::TryRecvError::Disconnected) => return,
+                    let s = render_slot_thread.lock().unwrap().take();
+                    match s {
+                        Some(s) => break s,
+                        None => { unsafe { esp_idf_sys::vTaskDelay(1) }; }
                     }
                 };
                 // Only reallocate framebuffer when the logical pixel dimensions
@@ -1565,7 +1567,7 @@ fn main() -> Result<()> {
         .expect("failed to spawn render thread");
 
     // Initial draw via render channel
-    let _ = render_tx.send(state.clone());
+    *render_slot.lock().unwrap() = Some(state.clone());
     state.dirty = false;
 
     let mut prev_view = state.current_view;
@@ -2245,9 +2247,8 @@ fn main() -> Result<()> {
                 }
             } else {
                 render_sram_low_streak = 0;
-                if render_tx.try_send(state.clone()).is_ok() {
-                    state.dirty = false;
-                }
+                *render_slot.lock().unwrap() = Some(state.clone());
+                state.dirty = false;
             }
         }
 
