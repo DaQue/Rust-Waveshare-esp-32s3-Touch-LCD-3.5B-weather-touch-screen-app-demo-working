@@ -1626,7 +1626,8 @@ fn main() -> Result<()> {
             }
             snap.indoor_temp_f       = state.indoor_temp;
             snap.indoor_humidity_pct = state.indoor_humidity;
-            snap.indoor_pressure_hpa = state.indoor_pressure;
+            let press_correction = state.pressure_history.delta_owm_bme_stable().unwrap_or(0.0);
+            snap.indoor_pressure_hpa = state.indoor_pressure.map(|p| p + press_correction);
             snap.uptime_s            = uptime_s;
             snap.ip_address          = state.ip_address.clone();
         }
