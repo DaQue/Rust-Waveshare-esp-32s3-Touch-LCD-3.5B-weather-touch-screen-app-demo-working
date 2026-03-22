@@ -109,3 +109,7 @@ CONFIG_FREERTOS_HZ=100
 # esp_timer and timer daemon: bumped from defaults as insurance.
 CONFIG_ESP_TIMER_TASK_STACK_SIZE=6144
 CONFIG_FREERTOS_TIMER_TASK_STACK_DEPTH=4096
+
+# HTTP server header buffer: default 512B is too small when Tailscale proxy
+# adds X-Forwarded-For, X-Real-IP, and other forwarding headers.
+CONFIG_HTTPD_MAX_REQ_HDR_LEN=2048
