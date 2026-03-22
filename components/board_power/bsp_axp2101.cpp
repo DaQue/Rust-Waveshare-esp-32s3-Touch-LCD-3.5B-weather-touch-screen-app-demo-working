@@ -209,7 +209,7 @@ extern "C" esp_err_t bsp_axp2101_init(void)
     printf("===========================================================================\n");
 
     // Set the time of pressing the button to turn off
-    power.setPowerKeyPressOffTime(XPOWERS_POWEROFF_4S);
+    power.setPowerKeyPressOffTime(XPOWERS_POWEROFF_10S);
     uint8_t opt = power.getPowerKeyPressOffTime();
     printf("PowerKeyPressOffTime:");
     switch (opt)
@@ -336,14 +336,9 @@ extern "C" esp_err_t bsp_axp2101_init(void)
     // Set charge cut-off voltage
     power.setChargeTargetVoltage(XPOWERS_AXP2101_CHG_VOL_4V1);
 
-    // Set the watchdog trigger event type
-    power.setWatchdogConfig(XPOWERS_AXP2101_WDT_IRQ_TO_PIN);
-    // Set watchdog timeout
-    power.setWatchdogTimeout(XPOWERS_AXP2101_WDT_TIMEOUT_4S);
-    // Enable watchdog to trigger interrupt event
-    power.enableWatchdog();
-
-    // power.disableWatchdog();
+    // AXP2101 internal WDT disabled: we never call clrWatchdog() so it would
+    // fire an IRQ every 4s with no handler. Clean shutdown: disable entirely.
+    power.disableWatchdog();
 
     // Enable Button Battery charge
     power.enableButtonBatteryCharge();
