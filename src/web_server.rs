@@ -40,6 +40,14 @@ const CORS_HEADERS: &[(&str, &str)] = &[
     ("Content-Type", "application/json"),
 ];
 
+// History responses are streamed — tell proxies (Tailscale) to wait for
+// connection close before completing delivery, preventing truncated JSON.
+const HISTORY_HEADERS: &[(&str, &str)] = &[
+    ("Access-Control-Allow-Origin", "*"),
+    ("Content-Type", "application/json"),
+    ("Connection", "close"),
+];
+
 /// Start the HTTP server on port 80. Returns the server handle — must be kept
 /// alive for the lifetime of the program. Call only after WiFi is connected.
 pub fn start(
@@ -121,7 +129,7 @@ pub fn start(
 
         let hours = parse_hours_from_uri(req.uri());
         let ring = history.lock().unwrap();
-        let mut resp = req.into_response(200, Some("OK"), CORS_HEADERS)?;
+        let mut resp = req.into_response(200, Some("OK"), HISTORY_HEADERS)?;
 
         resp.write(b"[")?;
         let mut first = true;
