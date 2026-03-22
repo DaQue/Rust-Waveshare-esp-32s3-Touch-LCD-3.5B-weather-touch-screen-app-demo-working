@@ -12,6 +12,8 @@ extern "C" {
 esp_err_t board_power_init(void);
 esp_err_t board_ioexpander_lcd_reset(i2c_port_t port);
 esp_err_t board_ioexpander_set_pa(uint8_t enable);
+/// Poll AXP2101 IRQ status and log any pending events (call periodically).
+void board_power_poll_irq(void);
 
 #ifdef __cplusplus
 }

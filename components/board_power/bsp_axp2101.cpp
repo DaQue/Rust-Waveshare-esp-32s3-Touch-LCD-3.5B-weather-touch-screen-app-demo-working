@@ -293,10 +293,11 @@ extern "C" esp_err_t bsp_axp2101_init(void)
 
     // power.enableTemperatureMeasure();
 
-    // Enable internal ADC detection
-    power.enableBattDetection();
+    // No LiPo battery fitted — disable battery detection and charger to prevent
+    // the AXP2101 charge safety timer / precharge timeout from cutting power.
+    power.disableBattDetection();
     power.enableVbusVoltageMeasure();
-    power.enableBattVoltageMeasure();
+    power.disableBattVoltageMeasure();
     power.enableSystemVoltageMeasure();
 
     /*
@@ -326,25 +327,14 @@ extern "C" esp_err_t bsp_axp2101_init(void)
                                                                              //  XPOWERS_AXP2101_PKEY_NEGATIVE_IRQ | XPOWERS_AXP2101_PKEY_POSITIVE_IRQ   |   //POWER KEY
     );
 
-    // Set the precharge charging current
-    power.setPrechargeCurr(XPOWERS_AXP2101_PRECHARGE_50MA);
-    // Set constant current charge current limit
-    power.setChargerConstantCurr(XPOWERS_AXP2101_CHG_CUR_200MA);
-    // Set stop charging termination current
-    power.setChargerTerminationCurr(XPOWERS_AXP2101_CHG_ITERM_25MA);
-
-    // Set charge cut-off voltage
-    power.setChargeTargetVoltage(XPOWERS_AXP2101_CHG_VOL_4V1);
+    // No LiPo battery: disable charger entirely so the AXP2101 charge safety
+    // timer never fires. Also disable button-battery charge (no coin cell).
+    power.disableCharge();
+    power.disableButtonBatteryCharge();
 
     // AXP2101 internal WDT disabled: we never call clrWatchdog() so it would
     // fire an IRQ every 4s with no handler. Clean shutdown: disable entirely.
     power.disableWatchdog();
-
-    // Enable Button Battery charge
-    power.enableButtonBatteryCharge();
-
-    // Set Button Battery charge voltage
-    power.setButtonBatteryChargeVoltage(3300);
     return ESP_OK;
 }
 

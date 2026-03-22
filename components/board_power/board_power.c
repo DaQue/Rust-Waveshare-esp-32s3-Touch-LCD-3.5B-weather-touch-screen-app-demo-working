@@ -82,6 +82,13 @@ esp_err_t board_ioexpander_set_pa(uint8_t enable)
     return ESP_OK;
 }
 
+extern void pmu_isr_handler(void);
+
+void board_power_poll_irq(void)
+{
+    pmu_isr_handler();
+}
+
 esp_err_t board_power_init(void)
 {
     ESP_RETURN_ON_ERROR(bsp_i2c_init(), TAG, "bsp_i2c_init failed");
