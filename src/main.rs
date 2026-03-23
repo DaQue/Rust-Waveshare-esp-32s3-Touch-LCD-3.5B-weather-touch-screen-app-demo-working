@@ -1650,13 +1650,17 @@ fn main() -> Result<()> {
                 last_history_ms = t;
                 let unix_s = unsafe { libc::time(core::ptr::null_mut()) } as u32;
                 let correction = state.pressure_history.delta_owm_bme_stable().unwrap_or(0.0);
+                let outdoor_raw = state.current_weather.as_ref()
+                    .map(|w| (w.temp_f + 41.0).clamp(1.0, 255.0) as u8)
+                    .unwrap_or(0);
                 let sample = history_ring::HistorySample {
-                    timestamp:    unix_s,
+                    timestamp:        unix_s,
                     temp_f,
-                    humidity_pct: hum,
-                    pressure_hpa: pres + correction,
-                    hvac_state:   state.hvac.state_u8(),
-                    version:      history_ring::SAMPLE_VERSION,
+                    humidity_pct:     hum,
+                    pressure_hpa:     pres + correction,
+                    hvac_state:       state.hvac.state_u8(),
+                    outdoor_temp_u8:  outdoor_raw,
+                    version:          history_ring::SAMPLE_VERSION,
                     ..Default::default()
                 };
                 history.lock().unwrap().push(sample);
@@ -2212,6 +2216,12 @@ fn main() -> Result<()> {
                     if state.wifi_rssi.is_some() {
                         state.wifi_rssi = None;
                         state.dirty = true;
+                    }
+                    if wifi_ok {
+                        wifi_ok = false;
+                        // Trigger reconnect after 60s (not 5m) on first detection
+                        last_wifi_retry_ms = t.wrapping_sub(WIFI_RETRY_INTERVAL_MS - 60_000);
+                        log::warn!("WiFi: lost association — reconnect in 60s");
                     }
                     if debug_flags::is_on(&debug_flags::DEBUG_WIFI) {
                         info!("WiFi: not connected");

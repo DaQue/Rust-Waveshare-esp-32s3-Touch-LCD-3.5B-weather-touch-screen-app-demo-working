@@ -77,6 +77,20 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
         .draw(fb)
         .ok();
 
+    // Last completed run
+    if let Some((run_state, run_secs)) = hvac.last_run() {
+        let (run_color, run_label) = match run_state {
+            HvacState::Heating => (COLOR_HEAT, "HEAT"),
+            HvacState::Cooling => (COLOR_COOL, "COOL"),
+            HvacState::Idle    => (COLOR_IDLE, "IDLE"),
+        };
+        let last_style = MonoTextStyle::new(&PROFONT_14_POINT, run_color);
+        let last_text = format!("Last: {} {}m {}s", run_label, run_secs / 60, run_secs % 60);
+        Text::new(&last_text, Point::new(14, 86), last_style)
+            .draw(fb)
+            .ok();
+    }
+
     // Stats sections
     if hvac.history_count() >= 60 {
         let stats = hvac.stats();

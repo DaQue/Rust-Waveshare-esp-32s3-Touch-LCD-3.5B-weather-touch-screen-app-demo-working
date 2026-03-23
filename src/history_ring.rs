@@ -19,8 +19,9 @@ pub struct HistorySample {
     pub temp_f:       f32,      // Indoor temperature °F
     pub humidity_pct: f32,      // Indoor relative humidity %
     pub pressure_hpa: f32,      // Indoor pressure hPa (altitude-corrected)
-    pub hvac_state:   u8,       // HvacState: 0=Idle 1=Heating 2=Cooling
-    pub _reserved:    [u8; 3],  // Reserved for future fields
+    pub hvac_state:       u8,   // HvacState: 0=Idle 1=Heating 2=Cooling
+    pub outdoor_temp_u8:  u8,   // outdoor °F encoded: 0=no data, else (temp_f+41) as u8
+    pub _reserved:        [u8; 2], // Reserved for future fields
     pub version:      u8,       // Schema version — currently SAMPLE_VERSION
     pub _pad:         [u8; 3],  // Padding to 24 bytes
 }

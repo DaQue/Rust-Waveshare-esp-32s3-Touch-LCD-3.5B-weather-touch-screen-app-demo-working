@@ -77,6 +77,7 @@ svg text{font-family:system-ui,sans-serif}
   <div class="legend">
     <div class="legend-item"><div class="legend-dot" style="background:#58a6ff"></div>Temp °F</div>
     <div class="legend-item"><div class="legend-dot" style="background:#3fb950"></div>Humidity %</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#f0883e"></div>Outdoor °F</div>
   </div>
   <svg id="chart2h" width="100%" height="160" viewBox="0 0 860 160" preserveAspectRatio="none"></svg>
 </div>
@@ -86,6 +87,7 @@ svg text{font-family:system-ui,sans-serif}
   <div class="legend">
     <div class="legend-item"><div class="legend-dot" style="background:#58a6ff"></div>Temp °F</div>
     <div class="legend-item"><div class="legend-dot" style="background:#3fb950"></div>Humidity %</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#f0883e"></div>Outdoor °F</div>
     <div class="legend-item"><div class="legend-box" style="background:#f85149"></div>Heat</div>
     <div class="legend-item"><div class="legend-box" style="background:#388bfd"></div>Cool</div>
   </div>
@@ -151,7 +153,7 @@ async function fetchCurrent() {
   }
 }
 
-// Draw temp+humidity line chart with optional HVAC background bands
+// Draw temp+humidity+outdoor line chart with optional HVAC background bands
 function drawLineChart(svgId, samples, W, H, showHvac) {
   const svg = $(svgId);
   const PL=38, PR=8, PT=8, PB=20;
@@ -163,6 +165,9 @@ function drawLineChart(svgId, samples, W, H, showHvac) {
 
   const tf = samples.map(s=>s.tf);
   const hf = samples.map(s=>s.h);
+  const ot = samples.map(s=>s.otu > 0 ? s.otu - 41 : null);
+  const otVals = ot.filter(v=>v!==null);
+  const hasOt = otVals.length > 1;
 
   function range(arr) {
     let mn=arr[0], mx=arr[0];
@@ -171,16 +176,32 @@ function drawLineChart(svgId, samples, W, H, showHvac) {
     return [mn-pad, mx+pad];
   }
 
-  const [tmin,tmax] = range(tf);
+  // Expand temp range to include outdoor temps so both fit on same axis
+  const allTemps = hasOt ? [...tf, ...otVals] : tf;
+  const [tmin,tmax] = range(allTemps);
   const [hmin,hmax] = range(hf);
 
+  const xOf = i => PL + (i/(samples.length-1||1))*cw;
+  const yOf = (v,mn,mx) => PT + ch - ((v-mn)/(mx-mn||1))*ch;
+
   function poly(arr, mn, mx, color) {
-    const pts = arr.map((v,i)=>{
-      const x = PL + (i/(arr.length-1||1))*cw;
-      const y = PT + ch - ((v-mn)/(mx-mn||1))*ch;
-      return x.toFixed(1)+','+y.toFixed(1);
-    });
+    const pts = arr.map((v,i) => xOf(i).toFixed(1)+','+yOf(v,mn,mx).toFixed(1));
     return `<polyline points="${pts.join(' ')}" fill="none" stroke="${color}" stroke-width="1.5" stroke-linejoin="round"/>`;
+  }
+
+  // Outdoor line — split into segments across null gaps
+  function otPoly() {
+    let svg = '', cur = [];
+    const flush = () => {
+      if(cur.length > 1) svg += `<polyline points="${cur.join(' ')}" fill="none" stroke="#f0883e" stroke-width="1.5" stroke-linejoin="round"/>`;
+      cur = [];
+    };
+    for(let i=0; i<samples.length; i++) {
+      if(ot[i] !== null) cur.push(xOf(i).toFixed(1)+','+yOf(ot[i],tmin,tmax).toFixed(1));
+      else flush();
+    }
+    flush();
+    return svg;
   }
 
   // Y-axis labels (temp scale on left)
@@ -192,18 +213,21 @@ function drawLineChart(svgId, samples, W, H, showHvac) {
     yLabels += `<line x1="${PL}" y1="${y}" x2="${PL+cw}" y2="${y}" stroke="#21262d" stroke-width="0.5"/>`;
   }
 
-  // X-axis time labels
+  // X-axis time labels at 0%, 25%, 50%, 75%, 100%
   let xLabels = '';
-  if(samples.length > 1){
+  if(samples.length > 1) {
     const fmtT = ts => { const d=new Date(ts*1000); return d.getHours()+':'+(d.getMinutes()+'').padStart(2,'0'); };
-    xLabels += `<text x="${PL}" y="${H-4}" fill="#7d8590" font-size="9" text-anchor="start">${fmtT(samples[0].ts)}</text>`;
-    xLabels += `<text x="${PL+cw}" y="${H-4}" fill="#7d8590" font-size="9" text-anchor="end">${fmtT(samples[samples.length-1].ts)}</text>`;
+    [0, 0.25, 0.5, 0.75, 1].forEach(p => {
+      const idx = Math.round(p*(samples.length-1));
+      const x = PL + p*cw;
+      const anchor = p===0 ? 'start' : p===1 ? 'end' : 'middle';
+      xLabels += `<text x="${x.toFixed(1)}" y="${H-4}" fill="#7d8590" font-size="9" text-anchor="${anchor}">${fmtT(samples[idx].ts)}</text>`;
+    });
   }
 
   // HVAC background bands
   let bands = '';
   if(showHvac && samples.length > 1) {
-    const xOf = i => PL + (i/(samples.length-1))*cw;
     let bandStart = 0, bandState = samples[0].hv||0;
     for(let i=1; i<=samples.length; i++){
       const hv = i < samples.length ? (samples[i].hv||0) : -1;
@@ -213,15 +237,15 @@ function drawLineChart(svgId, samples, W, H, showHvac) {
           const x0 = xOf(bandStart), x1 = xOf(i < samples.length ? i : samples.length-1);
           bands += `<rect x="${x0.toFixed(1)}" y="${PT}" width="${(x1-x0).toFixed(1)}" height="${ch}" fill="${color}" opacity="0.15"/>`;
         }
-        bandStart = i;
-        bandState = hv;
+        bandStart = i; bandState = hv;
       }
     }
   }
 
   svg.innerHTML = bands + yLabels + xLabels +
     poly(tf, tmin, tmax, '#58a6ff') +
-    poly(hf, hmin, hmax, '#3fb950');
+    poly(hf, hmin, hmax, '#3fb950') +
+    (hasOt ? otPoly() : '');
 }
 
 function renderHvacSummary(samples) {
@@ -266,6 +290,9 @@ fetchCurrent();
 fetchHistory();
 setInterval(fetchCurrent, 30000);
 setInterval(fetchHistory, 300000);
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) { fetchCurrent(); fetchHistory(); }
+});
 </script>
 </body>
 </html>

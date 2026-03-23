@@ -154,8 +154,8 @@ pub fn start(
                 use core::fmt::Write as FmtWrite;
                 let _ = write!(
                     buf,
-                    "{{\"ts\":{},\"tf\":{:.1},\"h\":{:.1},\"p\":{:.2},\"hv\":{}}}",
-                    s.timestamp, s.temp_f, s.humidity_pct, s.pressure_hpa, s.hvac_state
+                    "{{\"ts\":{},\"tf\":{:.1},\"h\":{:.1},\"p\":{:.2},\"hv\":{},\"otu\":{}}}",
+                    s.timestamp, s.temp_f, s.humidity_pct, s.pressure_hpa, s.hvac_state, s.outdoor_temp_u8
                 );
             }
             resp.write(buf.as_bytes())?;

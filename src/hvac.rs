@@ -64,6 +64,10 @@ pub struct HvacDetector {
     fast_count: usize,
     fast_period_mins: f32,  // detect_period_secs / 60
 
+    // Last completed run
+    last_run_state: HvacState,
+    last_run_secs:  u32,
+
     // Slow history ring
     history: [HvacState; HISTORY_SIZE],
     hist_idx: usize,
@@ -78,6 +82,8 @@ impl HvacDetector {
             state_start_ms: 0,
             candidate_state: HvacState::Idle,
             candidate_count: 0,
+            last_run_state: HvacState::Idle,
+            last_run_secs: 0,
             fast_buf: [0.0; FAST_BUF_SIZE],
             fast_idx: 0,
             fast_count: 0,
@@ -131,6 +137,11 @@ impl HvacDetector {
                 self.candidate_count = 1;
             }
             if self.candidate_count >= FAST_CONFIRM {
+                // Record last run when transitioning from an active state to Idle
+                if proposed == HvacState::Idle && self.current_state != HvacState::Idle {
+                    self.last_run_state = self.current_state;
+                    self.last_run_secs  = now_ms.wrapping_sub(self.state_start_ms) / 1000;
+                }
                 self.current_state = proposed;
                 self.state_start_ms = now_ms;
                 self.candidate_count = 0;
@@ -159,6 +170,12 @@ impl HvacDetector {
             HvacState::Heating => 1,
             HvacState::Cooling => 2,
         }
+    }
+
+    /// Returns (state, duration_secs) of the last completed Heat or Cool run, if any.
+    pub fn last_run(&self) -> Option<(HvacState, u32)> {
+        if self.last_run_secs == 0 { None }
+        else { Some((self.last_run_state, self.last_run_secs)) }
     }
 
     pub fn state_duration_secs(&self, now_ms: u32) -> u32 {
