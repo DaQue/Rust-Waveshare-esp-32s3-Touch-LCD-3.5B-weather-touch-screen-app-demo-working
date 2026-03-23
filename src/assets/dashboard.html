@@ -252,7 +252,7 @@ async function fetchHistory() {
     const r = await fetch('/api/history?hours=24');
     const data = await r.json();
     const last2h = data.slice(-120);
-    drawLineChart('chart2h',  last2h, 860, 160, false);
+    drawLineChart('chart2h',  last2h, 860, 160, true);
     drawLineChart('chart24h', data,   860, 200, true);
     renderHvacSummary(data);
   } catch(e) {
