@@ -95,6 +95,12 @@ pub fn start(
         Ok(())
     })?;
 
+    // GET /favicon.ico — return 204 No Content to stop browser 404 spam
+    server.fn_handler("/favicon.ico", Method::Get, |req| -> Result<(), anyhow::Error> {
+        req.into_response(204, Some("No Content"), &[])?.write(b"")?;
+        Ok(())
+    })?;
+
     // GET /api/current — current sensor + weather snapshot as JSON
     server.fn_handler("/api/current", Method::Get, move |req| -> Result<(), anyhow::Error> {
         let largest = unsafe {
@@ -154,8 +160,10 @@ pub fn start(
             }
             resp.write(buf.as_bytes())?;
             count += 1;
-            // Yield to FreeRTOS every 100 samples so IDLE0 stays fed.
-            if count % 100 == 0 {
+            // Yield every 5 samples — TCP send window is ~5760 bytes; at ~60
+            // bytes/sample the buffer fills fast. Frequent yields let lwIP
+            // drain the window between writes, preventing EAGAIN drops.
+            if count % 5 == 0 {
                 unsafe { esp_idf_sys::vTaskDelay(1) };
             }
         }
