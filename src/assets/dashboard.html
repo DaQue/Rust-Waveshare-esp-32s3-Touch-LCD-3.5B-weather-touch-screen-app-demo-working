@@ -94,6 +94,15 @@ svg text{font-family:system-ui,sans-serif}
   <svg id="chart24h" width="100%" height="200" viewBox="0 0 860 200" preserveAspectRatio="none"></svg>
 </div>
 
+<div class="section-title">24h Pressure</div>
+<div class="chart-wrap">
+  <div class="legend">
+    <div class="legend-item"><div class="legend-dot" style="background:#58a6ff"></div>Indoor hPa</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#bc8cff"></div>Outdoor hPa</div>
+  </div>
+  <svg id="chartPress" width="100%" height="140" viewBox="0 0 860 140" preserveAspectRatio="none"></svg>
+</div>
+
 <div class="section-title">HVAC 24h Summary</div>
 <div class="chart-wrap" style="padding:10px 12px">
   <div id="hvac-summary" style="font-size:.85rem;color:#e6edf3;line-height:1.8">—</div>
@@ -271,6 +280,68 @@ function renderHvacSummary(samples) {
     `&emsp;<span style="color:#388bfd">▼ Cool</span> ${fmtMins(coolMins)} &nbsp;·&nbsp; ${coolCycles} cycle${coolCycles!==1?'s':''}`;
 }
 
+function drawPressureChart(svgId, samples, W, H) {
+  const svg = $(svgId);
+  const PL=48, PR=8, PT=8, PB=20;
+  const cw=W-PL-PR, ch=H-PT-PB;
+  if (!samples.length) {
+    svg.innerHTML = '<text x="430" y="'+(H/2)+'" fill="#7d8590" text-anchor="middle" font-size="12">No data yet</text>';
+    return;
+  }
+
+  const indoor = samples.map(s=>s.p);
+  const outdoor = samples.map(s=>s.op > 0 ? s.op / 10 : null);
+  const outVals = outdoor.filter(v=>v!==null);
+
+  const allVals = outVals.length > 1 ? [...indoor, ...outVals] : indoor;
+  let mn=allVals[0], mx=allVals[0];
+  for(const v of allVals){if(v<mn)mn=v;if(v>mx)mx=v;}
+  const pad=(mx-mn)*0.15||0.5;
+  mn-=pad; mx+=pad;
+
+  const xOf = i => PL + (i/(samples.length-1||1))*cw;
+  const yOf = v => PT + ch - ((v-mn)/(mx-mn||1))*ch;
+
+  // Y-axis labels
+  let yLabels = '';
+  for(let i=0; i<=4; i++){
+    const v = mn+(mx-mn)*(i/4);
+    const y = PT+ch-(i/4)*ch;
+    yLabels += `<text x="${PL-4}" y="${y+4}" fill="#7d8590" font-size="9" text-anchor="end">${v.toFixed(1)}</text>`;
+    yLabels += `<line x1="${PL}" y1="${y}" x2="${PL+cw}" y2="${y}" stroke="#21262d" stroke-width="0.5"/>`;
+  }
+
+  // X-axis labels
+  let xLabels = '';
+  if(samples.length > 1) {
+    const fmtT = ts => { const d=new Date(ts*1000); return d.getHours()+':'+(d.getMinutes()+'').padStart(2,'0'); };
+    [0, 0.25, 0.5, 0.75, 1].forEach(p => {
+      const idx = Math.round(p*(samples.length-1));
+      const x = PL + p*cw;
+      const anchor = p===0 ? 'start' : p===1 ? 'end' : 'middle';
+      xLabels += `<text x="${x.toFixed(1)}" y="${H-4}" fill="#7d8590" font-size="9" text-anchor="${anchor}">${fmtT(samples[idx].ts)}</text>`;
+    });
+  }
+
+  // Indoor line
+  const inPts = indoor.map((v,i) => xOf(i).toFixed(1)+','+yOf(v).toFixed(1));
+  const inLine = `<polyline points="${inPts.join(' ')}" fill="none" stroke="#58a6ff" stroke-width="1.5" stroke-linejoin="round"/>`;
+
+  // Outdoor line with null gaps
+  let outLine = '', cur = [];
+  const flush = () => {
+    if(cur.length > 1) outLine += `<polyline points="${cur.join(' ')}" fill="none" stroke="#bc8cff" stroke-width="1.5" stroke-linejoin="round"/>`;
+    cur = [];
+  };
+  for(let i=0; i<samples.length; i++){
+    if(outdoor[i]!==null) cur.push(xOf(i).toFixed(1)+','+yOf(outdoor[i]).toFixed(1));
+    else flush();
+  }
+  flush();
+
+  svg.innerHTML = yLabels + xLabels + inLine + outLine;
+}
+
 async function fetchHistory() {
   try {
     const r = await fetch('/api/history?hours=24');
@@ -278,6 +349,7 @@ async function fetchHistory() {
     const last2h = data.slice(-120);
     drawLineChart('chart2h',  last2h, 860, 160, true);
     drawLineChart('chart24h', data,   860, 200, true);
+    drawPressureChart('chartPress', data, 860, 140);
     renderHvacSummary(data);
   } catch(e) {
     ['chart2h','chart24h'].forEach(id => {

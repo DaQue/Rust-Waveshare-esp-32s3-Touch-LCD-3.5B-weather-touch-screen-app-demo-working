@@ -149,13 +149,14 @@ pub fn start(
         for s in ring.iter_recent(hours) {
             if !first { resp.write(b",")?; }
             first = false;
-            let mut buf = heapless::String::<128>::new();
+            let mut buf = heapless::String::<160>::new();
             {
                 use core::fmt::Write as FmtWrite;
                 let _ = write!(
                     buf,
-                    "{{\"ts\":{},\"tf\":{:.1},\"h\":{:.1},\"p\":{:.2},\"hv\":{},\"otu\":{}}}",
-                    s.timestamp, s.temp_f, s.humidity_pct, s.pressure_hpa, s.hvac_state, s.outdoor_temp_u8
+                    "{{\"ts\":{},\"tf\":{:.1},\"h\":{:.1},\"p\":{:.2},\"hv\":{},\"otu\":{},\"op\":{}}}",
+                    s.timestamp, s.temp_f, s.humidity_pct, s.pressure_hpa, s.hvac_state,
+                    s.outdoor_temp_u8, s.outdoor_press_u16
                 );
             }
             resp.write(buf.as_bytes())?;
