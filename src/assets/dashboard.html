@@ -6,25 +6,25 @@
 <title>ESP32 Dashboard</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{background:#0d1117;color:#e6edf3;font-family:system-ui,sans-serif;padding:12px;max-width:900px;margin:0 auto}
-h1{font-size:1.1rem;color:#7d8590;font-weight:400;margin-bottom:12px}
+body{background:#0d1117;color:#e6edf3;font-family:system-ui,sans-serif;padding:8px;max-width:1200px;margin:0 auto}
+h1{font-size:1rem;color:#7d8590;font-weight:400;margin-bottom:8px}
 h1 span{color:#58a6ff}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:16px}
-.card{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:12px}
-.card .label{font-size:.7rem;color:#7d8590;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px}
-.card .value{font-size:1.6rem;font-weight:600;color:#e6edf3}
-.card .value.big{font-size:2rem}
-.card .unit{font-size:.8rem;color:#7d8590;margin-left:2px}
-.card .sub{font-size:.75rem;color:#7d8590;margin-top:2px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:6px;margin-bottom:8px}
+.card{background:#161b22;border:1px solid #30363d;border-radius:6px;padding:8px 10px}
+.card .label{font-size:.65rem;color:#7d8590;text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px}
+.card .value{font-size:1.4rem;font-weight:600;color:#e6edf3}
+.card .value.big{font-size:1.7rem}
+.card .unit{font-size:.75rem;color:#7d8590;margin-left:2px}
+.card .sub{font-size:.7rem;color:#7d8590;margin-top:1px}
 .card.accent{border-color:#1f6feb}
-.section-title{font-size:.75rem;color:#7d8590;text-transform:uppercase;letter-spacing:.08em;margin:16px 0 8px}
-.chart-wrap{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:12px}
+.section-title{font-size:.7rem;color:#7d8590;text-transform:uppercase;letter-spacing:.08em;margin:8px 0 4px}
+.chart-wrap{background:#161b22;border:1px solid #30363d;border-radius:6px;padding:8px 10px}
 svg text{font-family:system-ui,sans-serif}
-.legend{display:flex;gap:16px;margin-bottom:8px;flex-wrap:wrap}
-.legend-item{display:flex;align-items:center;gap:5px;font-size:.72rem;color:#7d8590}
+.legend{display:flex;gap:12px;margin-bottom:6px;flex-wrap:wrap}
+.legend-item{display:flex;align-items:center;gap:4px;font-size:.68rem;color:#7d8590}
 .legend-dot{width:10px;height:3px;border-radius:2px}
-.legend-box{width:10px;height:10px;border-radius:2px;opacity:.6}
-.status{font-size:.7rem;color:#7d8590;margin-top:12px;text-align:right}
+.legend-box{width:9px;height:9px;border-radius:2px;opacity:.6}
+.status{font-size:.65rem;color:#7d8590;margin-top:8px;text-align:right}
 .stale{color:#f85149}
 </style>
 </head>
@@ -79,7 +79,7 @@ svg text{font-family:system-ui,sans-serif}
     <div class="legend-item"><div class="legend-dot" style="background:#3fb950"></div>Humidity %</div>
     <div class="legend-item"><div class="legend-dot" style="background:#f0883e"></div>Outdoor °F</div>
   </div>
-  <svg id="chart2h" width="100%" height="160" viewBox="0 0 860 160" preserveAspectRatio="none"></svg>
+  <svg id="chart2h" width="100%" height="120" viewBox="0 0 860 120" preserveAspectRatio="none"></svg>
 </div>
 
 <div class="section-title">24h Indoor History</div>
@@ -91,7 +91,12 @@ svg text{font-family:system-ui,sans-serif}
     <div class="legend-item"><div class="legend-box" style="background:#f85149"></div>Heat</div>
     <div class="legend-item"><div class="legend-box" style="background:#388bfd"></div>Cool</div>
   </div>
-  <svg id="chart24h" width="100%" height="200" viewBox="0 0 860 200" preserveAspectRatio="none"></svg>
+  <svg id="chart24h" width="100%" height="150" viewBox="0 0 860 150" preserveAspectRatio="none"></svg>
+</div>
+
+<div class="section-title">HVAC 24h Summary</div>
+<div class="chart-wrap" style="padding:10px 12px">
+  <div id="hvac-summary" style="font-size:.85rem;color:#e6edf3;line-height:1.8">—</div>
 </div>
 
 <div class="section-title">24h Pressure</div>
@@ -100,12 +105,7 @@ svg text{font-family:system-ui,sans-serif}
     <div class="legend-item"><div class="legend-dot" style="background:#58a6ff"></div>Indoor hPa</div>
     <div class="legend-item"><div class="legend-dot" style="background:#bc8cff"></div>Outdoor hPa</div>
   </div>
-  <svg id="chartPress" width="100%" height="140" viewBox="0 0 860 140" preserveAspectRatio="none"></svg>
-</div>
-
-<div class="section-title">HVAC 24h Summary</div>
-<div class="chart-wrap" style="padding:10px 12px">
-  <div id="hvac-summary" style="font-size:.85rem;color:#e6edf3;line-height:1.8">—</div>
+  <svg id="chartPress" width="100%" height="110" viewBox="0 0 860 110" preserveAspectRatio="none"></svg>
 </div>
 
 <div class="status" id="status">Loading…</div>
@@ -347,16 +347,20 @@ async function fetchHistory() {
     const r = await fetch('/api/history?hours=24');
     const data = await r.json();
     const last2h = data.slice(-120);
-    drawLineChart('chart2h',  last2h, 860, 160, true);
-    drawLineChart('chart24h', data,   860, 200, true);
-    drawPressureChart('chartPress', data, 860, 140);
+    drawLineChart('chart2h',  last2h, 860, 120, true);
+    drawLineChart('chart24h', data,   860, 150, true);
+    drawPressureChart('chartPress', data, 860, 110);
     renderHvacSummary(data);
   } catch(e) {
-    ['chart2h','chart24h'].forEach(id => {
-      $(id).innerHTML = '<text x="430" y="80" fill="#f85149" text-anchor="middle" font-size="12">History fetch failed</text>';
-    });
+    // Leave existing chart data in place — status bar already shows the error
+    $('status').className = 'status stale';
+    $('status').textContent = 'History fetch failed: ' + e;
   }
 }
+
+['chart2h','chart24h','chartPress'].forEach(id => {
+  $(id).innerHTML = '<text x="430" y="50%" fill="#7d8590" text-anchor="middle" dominant-baseline="middle" font-size="12">Loading…</text>';
+});
 
 fetchCurrent();
 fetchHistory();
