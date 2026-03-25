@@ -26,6 +26,10 @@ svg text{font-family:system-ui,sans-serif}
 .legend-box{width:9px;height:9px;border-radius:2px;opacity:.6}
 .status{font-size:.65rem;color:#7d8590;margin-top:8px;text-align:right}
 .stale{color:#f85149}
+.row-title{display:flex;align-items:center;gap:8px;margin:8px 0 4px}
+.row-title .section-title{margin:0}
+.t-btn{background:#21262d;border:1px solid #30363d;border-radius:4px;color:#7d8590;font-size:.65rem;padding:2px 8px;cursor:pointer;line-height:1.4}
+.t-btn.active{background:#1f6feb;border-color:#1f6feb;color:#e6edf3}
 </style>
 </head>
 <body>
@@ -72,17 +76,11 @@ svg text{font-family:system-ui,sans-serif}
   </div>
 </div>
 
-<div class="section-title">2h Indoor History</div>
-<div class="chart-wrap">
-  <div class="legend">
-    <div class="legend-item"><div class="legend-dot" style="background:#58a6ff"></div>Temp °F</div>
-    <div class="legend-item"><div class="legend-dot" style="background:#3fb950"></div>Humidity %</div>
-    <div class="legend-item"><div class="legend-dot" style="background:#f0883e"></div>Outdoor °F</div>
-  </div>
-  <svg id="chart2h" width="100%" height="120" viewBox="0 0 860 120" preserveAspectRatio="none"></svg>
+<div class="row-title">
+  <span class="section-title">Indoor History</span>
+  <button id="btn2h"  class="t-btn"        onclick="setView('2h')">2H</button>
+  <button id="btn24h" class="t-btn active" onclick="setView('24h')">24H</button>
 </div>
-
-<div class="section-title">24h Indoor History</div>
 <div class="chart-wrap">
   <div class="legend">
     <div class="legend-item"><div class="legend-dot" style="background:#58a6ff"></div>Temp °F</div>
@@ -91,15 +89,15 @@ svg text{font-family:system-ui,sans-serif}
     <div class="legend-item"><div class="legend-box" style="background:#f85149"></div>Heat</div>
     <div class="legend-item"><div class="legend-box" style="background:#388bfd"></div>Cool</div>
   </div>
-  <svg id="chart24h" width="100%" height="150" viewBox="0 0 860 150" preserveAspectRatio="none"></svg>
+  <svg id="chartIndoor" width="100%" height="150" viewBox="0 0 860 150" preserveAspectRatio="none"></svg>
 </div>
 
-<div class="section-title">HVAC 24h Summary</div>
+<div class="section-title" id="hvac-title">HVAC 24h Summary</div>
 <div class="chart-wrap" style="padding:10px 12px">
   <div id="hvac-summary" style="font-size:.85rem;color:#e6edf3;line-height:1.8">—</div>
 </div>
 
-<div class="section-title">24h Pressure</div>
+<div class="section-title" id="press-title">24h Pressure</div>
 <div class="chart-wrap">
   <div class="legend">
     <div class="legend-item"><div class="legend-dot" style="background:#58a6ff"></div>Indoor hPa</div>
@@ -112,7 +110,6 @@ svg text{font-family:system-ui,sans-serif}
 
 <script>
 const $ = id => document.getElementById(id);
-const fmt = (v, d) => v == null ? '—' : v.toFixed(d);
 
 function setVal(id, v, d=1) {
   const el = $(id);
@@ -135,6 +132,27 @@ function fmtMins(m) {
 
 const HVAC_LABELS = ['Idle', 'Heat', 'Cool'];
 const HVAC_COLORS = ['#7d8590', '#f85149', '#388bfd'];
+
+let allData = [];
+let currentView = '24h';
+
+function setView(v) {
+  currentView = v;
+  $('btn2h').className  = 't-btn' + (v === '2h'  ? ' active' : '');
+  $('btn24h').className = 't-btn' + (v === '24h' ? ' active' : '');
+  renderAll();
+}
+
+function renderAll() {
+  if (!allData.length) return;
+  const label = currentView === '2h' ? '2h' : '24h';
+  const samples = currentView === '2h' ? allData.slice(-120) : allData;
+  $('hvac-title').textContent  = 'HVAC ' + label + ' Summary';
+  $('press-title').textContent = label + ' Pressure';
+  drawLineChart('chartIndoor', samples, 860, 150, true, allData);
+  drawPressureChart('chartPress', samples, 860, 110, allData);
+  renderHvacSummary(samples);
+}
 
 async function fetchCurrent() {
   try {
@@ -162,8 +180,11 @@ async function fetchCurrent() {
   }
 }
 
-// Draw temp+humidity+outdoor line chart with optional HVAC background bands
-function drawLineChart(svgId, samples, W, H, showHvac) {
+// Draw temp+humidity+outdoor line chart with optional HVAC background bands.
+// rangeData: dataset used to compute Y axis range (default: samples).
+// Pass the full 24h dataset so scale stays consistent when switching views.
+function drawLineChart(svgId, samples, W, H, showHvac, rangeData) {
+  rangeData = rangeData || samples;
   const svg = $(svgId);
   const PL=38, PR=8, PT=8, PB=20;
   const cw=W-PL-PR, ch=H-PT-PB;
@@ -175,20 +196,21 @@ function drawLineChart(svgId, samples, W, H, showHvac) {
   const tf = samples.map(s=>s.tf);
   const hf = samples.map(s=>s.h);
   const ot = samples.map(s=>s.otu > 0 ? s.otu - 41 : null);
-  const otVals = ot.filter(v=>v!==null);
-  const hasOt = otVals.length > 1;
+  const hasOt = ot.filter(v=>v!==null).length > 1;
 
-  function range(arr) {
+  // Compute Y range from rangeData for consistency across view switches
+  function rangeOf(arr) {
     let mn=arr[0], mx=arr[0];
     for(const v of arr){if(v<mn)mn=v;if(v>mx)mx=v;}
     const pad=(mx-mn)*0.1||1;
     return [mn-pad, mx+pad];
   }
-
-  // Expand temp range to include outdoor temps so both fit on same axis
-  const allTemps = hasOt ? [...tf, ...otVals] : tf;
-  const [tmin,tmax] = range(allTemps);
-  const [hmin,hmax] = range(hf);
+  const rdTf = rangeData.map(s=>s.tf);
+  const rdOt = rangeData.map(s=>s.otu>0?s.otu-41:null).filter(v=>v!==null);
+  const rdHf = rangeData.map(s=>s.h);
+  const allTemps = rdOt.length > 1 ? [...rdTf, ...rdOt] : rdTf;
+  const [tmin,tmax] = rangeOf(allTemps);
+  const [hmin,hmax] = rangeOf(rdHf);
 
   const xOf = i => PL + (i/(samples.length-1||1))*cw;
   const yOf = (v,mn,mx) => PT + ch - ((v-mn)/(mx-mn||1))*ch;
@@ -198,11 +220,10 @@ function drawLineChart(svgId, samples, W, H, showHvac) {
     return `<polyline points="${pts.join(' ')}" fill="none" stroke="${color}" stroke-width="1.5" stroke-linejoin="round"/>`;
   }
 
-  // Outdoor line — split into segments across null gaps
   function otPoly() {
-    let svg = '', cur = [];
+    let out = '', cur = [];
     const flush = () => {
-      if(cur.length > 1) svg += `<polyline points="${cur.join(' ')}" fill="none" stroke="#f0883e" stroke-width="1.5" stroke-linejoin="round"/>`;
+      if(cur.length > 1) out += `<polyline points="${cur.join(' ')}" fill="none" stroke="#f0883e" stroke-width="1.5" stroke-linejoin="round"/>`;
       cur = [];
     };
     for(let i=0; i<samples.length; i++) {
@@ -210,10 +231,9 @@ function drawLineChart(svgId, samples, W, H, showHvac) {
       else flush();
     }
     flush();
-    return svg;
+    return out;
   }
 
-  // Y-axis labels (temp scale on left)
   let yLabels = '';
   for(let i=0; i<=4; i++){
     const v = tmin+(tmax-tmin)*(i/4);
@@ -222,7 +242,6 @@ function drawLineChart(svgId, samples, W, H, showHvac) {
     yLabels += `<line x1="${PL}" y1="${y}" x2="${PL+cw}" y2="${y}" stroke="#21262d" stroke-width="0.5"/>`;
   }
 
-  // X-axis time labels at 0%, 25%, 50%, 75%, 100%
   let xLabels = '';
   if(samples.length > 1) {
     const fmtT = ts => { const d=new Date(ts*1000); return d.getHours()+':'+(d.getMinutes()+'').padStart(2,'0'); };
@@ -234,7 +253,6 @@ function drawLineChart(svgId, samples, W, H, showHvac) {
     });
   }
 
-  // HVAC background bands
   let bands = '';
   if(showHvac && samples.length > 1) {
     let bandStart = 0, bandState = samples[0].hv||0;
@@ -280,7 +298,9 @@ function renderHvacSummary(samples) {
     `&emsp;<span style="color:#388bfd">▼ Cool</span> ${fmtMins(coolMins)} &nbsp;·&nbsp; ${coolCycles} cycle${coolCycles!==1?'s':''}`;
 }
 
-function drawPressureChart(svgId, samples, W, H) {
+// rangeData: full dataset for Y scale consistency across view switches
+function drawPressureChart(svgId, samples, W, H, rangeData) {
+  rangeData = rangeData || samples;
   const svg = $(svgId);
   const PL=48, PR=8, PT=8, PB=20;
   const cw=W-PL-PR, ch=H-PT-PB;
@@ -289,11 +309,13 @@ function drawPressureChart(svgId, samples, W, H) {
     return;
   }
 
-  const indoor = samples.map(s=>s.p);
+  const indoor  = samples.map(s=>s.p);
   const outdoor = samples.map(s=>s.op > 0 ? s.op / 10 : null);
-  const outVals = outdoor.filter(v=>v!==null);
 
-  const allVals = outVals.length > 1 ? [...indoor, ...outVals] : indoor;
+  // Range from full rangeData
+  const rdIn  = rangeData.map(s=>s.p);
+  const rdOut = rangeData.map(s=>s.op>0?s.op/10:null).filter(v=>v!==null);
+  const allVals = rdOut.length > 1 ? [...rdIn, ...rdOut] : rdIn;
   let mn=allVals[0], mx=allVals[0];
   for(const v of allVals){if(v<mn)mn=v;if(v>mx)mx=v;}
   const pad=(mx-mn)*0.15||0.5;
@@ -302,7 +324,6 @@ function drawPressureChart(svgId, samples, W, H) {
   const xOf = i => PL + (i/(samples.length-1||1))*cw;
   const yOf = v => PT + ch - ((v-mn)/(mx-mn||1))*ch;
 
-  // Y-axis labels
   let yLabels = '';
   for(let i=0; i<=4; i++){
     const v = mn+(mx-mn)*(i/4);
@@ -311,7 +332,6 @@ function drawPressureChart(svgId, samples, W, H) {
     yLabels += `<line x1="${PL}" y1="${y}" x2="${PL+cw}" y2="${y}" stroke="#21262d" stroke-width="0.5"/>`;
   }
 
-  // X-axis labels
   let xLabels = '';
   if(samples.length > 1) {
     const fmtT = ts => { const d=new Date(ts*1000); return d.getHours()+':'+(d.getMinutes()+'').padStart(2,'0'); };
@@ -323,11 +343,9 @@ function drawPressureChart(svgId, samples, W, H) {
     });
   }
 
-  // Indoor line
   const inPts = indoor.map((v,i) => xOf(i).toFixed(1)+','+yOf(v).toFixed(1));
   const inLine = `<polyline points="${inPts.join(' ')}" fill="none" stroke="#58a6ff" stroke-width="1.5" stroke-linejoin="round"/>`;
 
-  // Outdoor line with null gaps
   let outLine = '', cur = [];
   const flush = () => {
     if(cur.length > 1) outLine += `<polyline points="${cur.join(' ')}" fill="none" stroke="#bc8cff" stroke-width="1.5" stroke-linejoin="round"/>`;
@@ -345,12 +363,8 @@ function drawPressureChart(svgId, samples, W, H) {
 async function fetchHistory() {
   try {
     const r = await fetch('/api/history?hours=24');
-    const data = await r.json();
-    const last2h = data.slice(-120);
-    drawLineChart('chart2h',  last2h, 860, 120, true);
-    drawLineChart('chart24h', data,   860, 150, true);
-    drawPressureChart('chartPress', data, 860, 110);
-    renderHvacSummary(data);
+    allData = await r.json();
+    renderAll();
   } catch(e) {
     // Leave existing chart data in place — status bar already shows the error
     $('status').className = 'status stale';
@@ -358,9 +372,8 @@ async function fetchHistory() {
   }
 }
 
-['chart2h','chart24h','chartPress'].forEach(id => {
-  $(id).innerHTML = '<text x="430" y="50%" fill="#7d8590" text-anchor="middle" dominant-baseline="middle" font-size="12">Loading…</text>';
-});
+$('chartIndoor').innerHTML = '<text x="430" y="50%" fill="#7d8590" text-anchor="middle" dominant-baseline="middle" font-size="12">Loading…</text>';
+$('chartPress').innerHTML  = '<text x="430" y="50%" fill="#7d8590" text-anchor="middle" dominant-baseline="middle" font-size="12">Loading…</text>';
 
 fetchCurrent();
 fetchHistory();
