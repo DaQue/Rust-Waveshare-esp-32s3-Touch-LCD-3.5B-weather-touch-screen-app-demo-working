@@ -360,20 +360,46 @@ function drawPressureChart(svgId, samples, W, H, rangeData) {
   svg.innerHTML = yLabels + xLabels + inLine + outLine;
 }
 
+const CACHE_KEY = 'esp32_history';
+
+function loadCache() {
+  try {
+    const raw = localStorage.getItem(CACHE_KEY);
+    if (raw) { allData = JSON.parse(raw); renderAll(); return true; }
+  } catch(e) {}
+  return false;
+}
+
+function saveCache(data) {
+  try { localStorage.setItem(CACHE_KEY, JSON.stringify(data)); } catch(e) {}
+}
+
 async function fetchHistory() {
+  // If no data yet (first visit), fetch 2h first for a fast initial render
+  if (!allData.length) {
+    try {
+      const r2 = await fetch('/api/history?hours=2');
+      const quick = await r2.json();
+      if (quick.length) { allData = quick; renderAll(); }
+    } catch(e) {}
+  }
+  // Then fetch full 24h and update
   try {
     const r = await fetch('/api/history?hours=24');
     allData = await r.json();
     renderAll();
+    saveCache(allData);
   } catch(e) {
-    // Leave existing chart data in place — status bar already shows the error
     $('status').className = 'status stale';
     $('status').textContent = 'History fetch failed: ' + e;
   }
 }
 
-$('chartIndoor').innerHTML = '<text x="430" y="50%" fill="#7d8590" text-anchor="middle" dominant-baseline="middle" font-size="12">Loading…</text>';
-$('chartPress').innerHTML  = '<text x="430" y="50%" fill="#7d8590" text-anchor="middle" dominant-baseline="middle" font-size="12">Loading…</text>';
+// Show cached data immediately; only show Loading… if nothing cached
+if (!loadCache()) {
+  $('chartIndoor').innerHTML = '<text x="430" y="50%" fill="#7d8590" text-anchor="middle" dominant-baseline="middle" font-size="12">Loading…</text>';
+  $('chartPress').innerHTML  = '<text x="430" y="50%" fill="#7d8590" text-anchor="middle" dominant-baseline="middle" font-size="12">Loading…</text>';
+}
 
 fetchCurrent();
 fetchHistory();
