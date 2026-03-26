@@ -39,6 +39,9 @@ pub struct WebSnapshot {
     pub hvac_heat_cycles: u32,
     pub hvac_cool_cycles: u32,
     pub hvac_state:       u8,   // 0=Idle 1=Heating 2=Cooling
+    // System memory
+    pub free_heap_kb:     u32,  // PSRAM free (KB)
+    pub sram_block_kb:    u32,  // Largest free internal SRAM block (KB)
 }
 
 const CORS_HEADERS: &[(&str, &str)] = &[

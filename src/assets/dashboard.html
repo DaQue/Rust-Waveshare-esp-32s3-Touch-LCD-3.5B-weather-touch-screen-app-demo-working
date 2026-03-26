@@ -26,6 +26,18 @@ svg text{font-family:system-ui,sans-serif}
 .legend-box{width:9px;height:9px;border-radius:2px;opacity:.6}
 .status{font-size:.65rem;color:#7d8590;margin-top:8px;text-align:right}
 .stale{color:#f85149}
+.about-btn{background:none;border:1px solid #30363d;border-radius:4px;color:#7d8590;font-size:.65rem;padding:2px 8px;cursor:pointer;float:right;margin-top:1px}
+.about-btn:hover{border-color:#58a6ff;color:#58a6ff}
+.modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:100;align-items:center;justify-content:center}
+.modal-bg.open{display:flex}
+.modal{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:20px 24px;min-width:260px;max-width:380px;width:90%}
+.modal h2{font-size:.85rem;color:#7d8590;text-transform:uppercase;letter-spacing:.08em;margin-bottom:14px}
+.modal table{width:100%;border-collapse:collapse;font-size:.8rem}
+.modal td{padding:4px 0;color:#7d8590}
+.modal td+td{color:#e6edf3;text-align:right}
+.modal .close-btn{margin-top:16px;width:100%;background:#21262d;border:1px solid #30363d;border-radius:4px;color:#7d8590;padding:6px;cursor:pointer;font-size:.75rem}
+.modal .close-btn:hover{border-color:#58a6ff;color:#58a6ff}
+.modal .credit{font-size:.65rem;color:#7d8590;text-align:center;margin-top:12px}
 .row-title{display:flex;align-items:center;gap:8px;margin:8px 0 4px}
 .row-title .section-title{margin:0}
 .t-btn{background:#21262d;border:1px solid #30363d;border-radius:4px;color:#7d8590;font-size:.65rem;padding:2px 8px;cursor:pointer;line-height:1.4}
@@ -33,7 +45,23 @@ svg text{font-family:system-ui,sans-serif}
 </style>
 </head>
 <body>
-<h1>ESP32 Weather &nbsp;<span id="city">—</span></h1>
+<div class="modal-bg" id="about-modal" onclick="if(event.target===this)closeAbout()">
+  <div class="modal">
+    <h2>About</h2>
+    <table>
+      <tr><td>Device</td><td>Waveshare ESP32-S3 3.5B</td></tr>
+      <tr><td>Firmware</td><td id="ab-fw">—</td></tr>
+      <tr><td>IP</td><td id="ab-ip">—</td></tr>
+      <tr><td>Uptime</td><td id="ab-up">—</td></tr>
+      <tr><td>Free heap</td><td id="ab-heap">—</td></tr>
+      <tr><td>SRAM block</td><td id="ab-sram">—</td></tr>
+    </table>
+    <div class="credit">By David + Claude Code</div>
+    <button class="close-btn" onclick="closeAbout()">Close</button>
+  </div>
+</div>
+
+<h1>ESP32 Weather &nbsp;<span id="city">—</span><button class="about-btn" onclick="openAbout()">About</button></h1>
 
 <div class="section-title">Outdoor</div>
 <div class="grid" id="outdoor-grid">
@@ -136,6 +164,9 @@ const HVAC_COLORS = ['#7d8590', '#f85149', '#388bfd'];
 let allData = [];
 let currentView = '24h';
 
+function openAbout()  { $('about-modal').classList.add('open'); }
+function closeAbout() { $('about-modal').classList.remove('open'); }
+
 function setView(v) {
   currentView = v;
   $('btn2h').className  = 't-btn' + (v === '2h'  ? ' active' : '');
@@ -170,6 +201,11 @@ async function fetchCurrent() {
     const hv = d.hvac_state || 0;
     $('hvac-state').textContent = HVAC_LABELS[hv] || 'Idle';
     $('hvac-state').style.color = HVAC_COLORS[hv] || '#7d8590';
+    $('ab-fw').textContent   = d.firmware   || '—';
+    $('ab-ip').textContent   = d.ip_address || '—';
+    $('ab-up').textContent   = fmtUptime(d.uptime_s);
+    $('ab-heap').textContent = d.free_heap_kb  != null ? d.free_heap_kb  + ' KB' : '—';
+    $('ab-sram').textContent = d.sram_block_kb != null ? d.sram_block_kb + ' KB' : '—';
     $('status').className = 'status';
     $('status').textContent = 'Updated ' + new Date().toLocaleTimeString() +
       ' · ' + d.firmware + ' · ' + d.ip_address +

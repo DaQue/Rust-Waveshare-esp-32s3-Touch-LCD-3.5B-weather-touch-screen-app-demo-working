@@ -1638,6 +1638,12 @@ fn main() -> Result<()> {
             snap.hvac_cool_mins      = hvac_stats.cool.total_minutes;
             snap.hvac_heat_cycles    = hvac_stats.heat.cycles;
             snap.hvac_cool_cycles    = hvac_stats.cool.cycles;
+            snap.free_heap_kb        = unsafe {
+                esp_idf_sys::heap_caps_get_free_size(esp_idf_sys::MALLOC_CAP_SPIRAM)
+            } as u32 / 1024;
+            snap.sram_block_kb       = unsafe {
+                esp_idf_sys::heap_caps_get_largest_free_block(esp_idf_sys::MALLOC_CAP_INTERNAL)
+            } as u32 / 1024;
         }
 
         // History ring push (every 60s, indoor sensor only)
