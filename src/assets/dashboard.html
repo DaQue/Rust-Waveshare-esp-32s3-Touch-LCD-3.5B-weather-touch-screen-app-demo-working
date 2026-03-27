@@ -49,6 +49,8 @@ svg text{font-family:system-ui,sans-serif}
 .alert-meta{font-size:.65rem;color:#7d8590}
 .silence-btn{background:#f85149;border:none;border-radius:4px;color:#fff;font-size:.72rem;padding:4px 10px;cursor:pointer;white-space:nowrap;flex-shrink:0}
 .silence-btn.silenced{background:#21262d;border:1px solid #30363d;color:#7d8590;cursor:default}
+.sound-hint{display:none;font-size:.65rem;color:#f0883e;margin-bottom:6px;cursor:pointer}
+.sound-hint:hover{color:#ffa657}
 </style>
 </head>
 <body>
@@ -70,6 +72,7 @@ svg text{font-family:system-ui,sans-serif}
 
 <h1>ESP32 Weather &nbsp;<span id="city">—</span><button class="about-btn" onclick="openAbout()">About</button></h1>
 
+<div class="sound-hint" id="sound-hint" onclick="resumeAudio()">🔔 Tap here to enable alert sounds</div>
 <div class="alert-banner" id="alert-banner">
   <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px">
     <div style="min-width:0">
@@ -480,9 +483,32 @@ let alertBeepInterval = null;
 let alertSilenced = false;
 let lastAlertFingerprint = '';
 
+// Persistent AudioContext — browsers require a user gesture before audio plays.
+// We create it early and resume on first interaction; beepOnce() silently
+// does nothing if the context isn't running yet.
+let _audioCtx = null;
+function getAudioCtx() {
+  if (!_audioCtx) {
+    try { _audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch(e) {}
+  }
+  return _audioCtx;
+}
+function resumeAudio() {
+  const ctx = getAudioCtx();
+  if (ctx && ctx.state === 'suspended') {
+    ctx.resume().then(() => { $('sound-hint') && ($('sound-hint').style.display = 'none'); });
+  }
+}
+// Unlock on any user interaction
+document.addEventListener('click',      resumeAudio);
+document.addEventListener('touchstart', resumeAudio);
+// Try creating context immediately (may be suspended until gesture)
+getAudioCtx();
+
 function beepOnce() {
+  const ctx = getAudioCtx();
+  if (!ctx || ctx.state !== 'running') return;
   try {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
     const g = ctx.createGain();
     g.connect(ctx.destination);
     [0, 0.22, 0.44].forEach(t => {
@@ -535,7 +561,14 @@ async function fetchAlerts() {
         const btn = $('silence-btn');
         btn.textContent = 'Silence'; btn.className = 'silence-btn'; btn.disabled = false;
       }
-      if (!alertSilenced) startAlertBeep();
+      if (!alertSilenced) {
+        startAlertBeep();
+        // Show hint if audio context not yet unlocked by a user gesture
+        const ctx = getAudioCtx();
+        if (ctx && ctx.state !== 'running') {
+          $('sound-hint').style.display = 'block';
+        }
+      }
     } else {
       $('alert-banner').classList.remove('active');
       $('city').style.color = '';
