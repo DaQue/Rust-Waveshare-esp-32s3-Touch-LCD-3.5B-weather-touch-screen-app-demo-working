@@ -1644,6 +1644,7 @@ fn main() -> Result<()> {
             snap.sram_block_kb       = unsafe {
                 esp_idf_sys::heap_caps_get_largest_free_block(esp_idf_sys::MALLOC_CAP_INTERNAL)
             } as u32 / 1024;
+            snap.warning_active = state.warning_active;
             snap.alert_count = state.weather_alerts.len() as u32;
             if let Some(a) = state.weather_alerts.first() {
                 snap.alert_event    = a.event.clone();

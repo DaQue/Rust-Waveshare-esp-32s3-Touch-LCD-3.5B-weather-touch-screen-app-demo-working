@@ -43,6 +43,7 @@ pub struct WebSnapshot {
     pub free_heap_kb:     u32,  // PSRAM free (KB)
     pub sram_block_kb:    u32,  // Largest free internal SRAM block (KB)
     // Active weather alerts (first alert only)
+    pub warning_active: bool,
     pub alert_count:    u32,
     pub alert_event:    String,
     pub alert_severity: String,
@@ -52,11 +53,12 @@ pub struct WebSnapshot {
 
 #[derive(Serialize)]
 struct AlertsSnap {
-    count:    u32,
-    event:    String,
-    severity: String,
-    headline: String,
-    expires:  String,
+    count:          u32,
+    warning_active: bool,
+    event:          String,
+    severity:       String,
+    headline:       String,
+    expires:        String,
 }
 
 const CORS_HEADERS: &[(&str, &str)] = &[
@@ -204,11 +206,12 @@ pub fn start(
         }
         let snap = snapshot_alerts.lock().unwrap();
         let resp = AlertsSnap {
-            count:    snap.alert_count,
-            event:    snap.alert_event.clone(),
-            severity: snap.alert_severity.clone(),
-            headline: snap.alert_headline.clone(),
-            expires:  snap.alert_expires.clone(),
+            count:          snap.alert_count,
+            warning_active: snap.warning_active,
+            event:          snap.alert_event.clone(),
+            severity:       snap.alert_severity.clone(),
+            headline:       snap.alert_headline.clone(),
+            expires:        snap.alert_expires.clone(),
         };
         drop(snap);
         let json = serde_json::to_string(&resp)?;

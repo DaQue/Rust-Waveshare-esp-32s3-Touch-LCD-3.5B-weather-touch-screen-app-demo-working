@@ -561,13 +561,17 @@ async function fetchAlerts() {
         const btn = $('silence-btn');
         btn.textContent = 'Silence'; btn.className = 'silence-btn'; btn.disabled = false;
       }
+      // If device silenced it, mirror that on the web side
+      if (!d.warning_active && !alertSilenced) {
+        stopAlertBeep();
+        alertSilenced = true;
+        const btn = $('silence-btn');
+        btn.textContent = 'Silenced'; btn.className = 'silence-btn silenced'; btn.disabled = true;
+      }
       if (!alertSilenced) {
         startAlertBeep();
-        // Show hint if audio context not yet unlocked by a user gesture
         const ctx = getAudioCtx();
-        if (ctx && ctx.state !== 'running') {
-          $('sound-hint').style.display = 'block';
-        }
+        if (ctx && ctx.state !== 'running') $('sound-hint').style.display = 'block';
       }
     } else {
       $('alert-banner').classList.remove('active');
