@@ -1889,7 +1889,7 @@ fn main() -> Result<()> {
                     }
                 }
 
-                if changed && alerts_snapshot_seen && !alerts.is_empty() && beep_enabled {
+                if changed && !alerts.is_empty() && beep_enabled {
                     let tone = alert_tone_for(&alerts);
                     let highest_kind = alerts.first().map(|a| a.kind()).unwrap_or(weather::AlertKind::Other);
 
