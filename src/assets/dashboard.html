@@ -342,14 +342,41 @@ function renderHvacSummary(samples) {
     }
     prevHv = hv;
   }
+
+  // 2h average cycle lengths — always from most recent 120 samples
+  const two = allData.length > 120 ? allData.slice(-120) : allData;
+  function avgCycleLen(data, st) {
+    const runs = [];
+    let run = 0;
+    for(const s of data){
+      if((s.hv||0) === st) { run++; }
+      else if(run > 0)     { runs.push(run); run = 0; }
+    }
+    if(run > 0) runs.push(run);
+    return runs.length ? Math.round(runs.reduce((a,b)=>a+b,0)/runs.length) : null;
+  }
+  const avgHeat = avgCycleLen(two, 1);
+  const avgCool = avgCycleLen(two, 2);
+  const avgIdle = avgCycleLen(two, 0);
+
   const el = $('hvac-summary');
   if(!heatMins && !coolMins){
     el.textContent = 'No HVAC activity recorded yet';
     return;
   }
+
+  const avgParts = [];
+  if(avgHeat != null) avgParts.push(`<span style="color:#f85149">▲</span> ${fmtMins(avgHeat)}`);
+  if(avgCool != null) avgParts.push(`<span style="color:#388bfd">▼</span> ${fmtMins(avgCool)}`);
+  if(avgIdle != null && (avgHeat != null || avgCool != null)) avgParts.push(`Idle ${fmtMins(avgIdle)}`);
+  const avgLine = avgParts.length
+    ? `<div style="font-size:.75rem;color:#7d8590;margin-top:3px">2h avg cycle: ${avgParts.join(' &thinsp;·&thinsp; ')}</div>`
+    : '';
+
   el.innerHTML =
     `<span style="color:#f85149">▲ Heat</span> ${fmtMins(heatMins)} &nbsp;·&nbsp; ${heatCycles} cycle${heatCycles!==1?'s':''}` +
-    `&emsp;<span style="color:#388bfd">▼ Cool</span> ${fmtMins(coolMins)} &nbsp;·&nbsp; ${coolCycles} cycle${coolCycles!==1?'s':''}`;
+    `&emsp;<span style="color:#388bfd">▼ Cool</span> ${fmtMins(coolMins)} &nbsp;·&nbsp; ${coolCycles} cycle${coolCycles!==1?'s':''}` +
+    avgLine;
 }
 
 // rangeData: full dataset for Y scale consistency across view switches
