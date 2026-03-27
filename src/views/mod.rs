@@ -370,6 +370,12 @@ impl AppState {
                 if self.weather_alerts.is_empty() {
                     self.force_weather_refresh = true;
                 } else {
+                    // Silence beep immediately on icon tap
+                    if self.warning_active {
+                        self.warning_active = false;
+                        self.warning_silenced_fingerprint = self.alert_fingerprint();
+                        crate::debug_flags::request_beep_stop();
+                    }
                     self.now_alerts_open = !self.now_alerts_open;
                 }
                 self.dirty = true;

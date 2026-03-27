@@ -1644,6 +1644,18 @@ fn main() -> Result<()> {
             snap.sram_block_kb       = unsafe {
                 esp_idf_sys::heap_caps_get_largest_free_block(esp_idf_sys::MALLOC_CAP_INTERNAL)
             } as u32 / 1024;
+            snap.alert_count = state.weather_alerts.len() as u32;
+            if let Some(a) = state.weather_alerts.first() {
+                snap.alert_event    = a.event.clone();
+                snap.alert_severity = a.severity.clone();
+                snap.alert_headline = a.headline.clone();
+                snap.alert_expires  = crate::weather::format_alert_expiry(&a.expires);
+            } else {
+                snap.alert_event.clear();
+                snap.alert_severity.clear();
+                snap.alert_headline.clear();
+                snap.alert_expires.clear();
+            }
         }
 
         // History ring push (every 60s, indoor sensor only)

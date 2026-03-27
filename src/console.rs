@@ -211,6 +211,7 @@ fn print_help_user() {
     info!("  alerts show                - show alert settings");
     info!("  alerts on|off              - enable/disable NWS alerts");
     info!("  alerts beep on|off|show    - enable/disable alert beeps");
+    info!("  alerts silence             - stop beeping now");
     info!("  alerts auto-scope on|off   - auto-discover NWS zone from Wi-Fi");
     info!("  alerts test warning        - inject fake warning for testing");
     info!("  [System]");
@@ -760,7 +761,12 @@ fn handle_alerts(
                 _ => info!("usage: alerts test warning"),
             }
         }
-        _ => info!("usage: alerts show|on|off|beep|auto-scope|ua|scope|zone|test warning"),
+        "silence" => {
+            crate::debug_flags::request_beep_stop();
+            crate::debug_flags::REQUEST_SILENCE_WARNING.store(true, std::sync::atomic::Ordering::Relaxed);
+            info!("alert beeping silenced");
+        }
+        _ => info!("usage: alerts show|on|off|beep|silence|auto-scope|ua|scope|zone|test warning"),
     }
     Ok(())
 }

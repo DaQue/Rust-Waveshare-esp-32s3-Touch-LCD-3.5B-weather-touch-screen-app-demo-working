@@ -42,6 +42,21 @@ pub struct WebSnapshot {
     // System memory
     pub free_heap_kb:     u32,  // PSRAM free (KB)
     pub sram_block_kb:    u32,  // Largest free internal SRAM block (KB)
+    // Active weather alerts (first alert only)
+    pub alert_count:    u32,
+    pub alert_event:    String,
+    pub alert_severity: String,
+    pub alert_headline: String,
+    pub alert_expires:  String,
+}
+
+#[derive(Serialize)]
+struct AlertsSnap {
+    count:    u32,
+    event:    String,
+    severity: String,
+    headline: String,
+    expires:  String,
 }
 
 const CORS_HEADERS: &[(&str, &str)] = &[
@@ -103,6 +118,8 @@ pub fn start(
         req.into_response(204, Some("No Content"), &[])?.write(b"")?;
         Ok(())
     })?;
+
+    let snapshot_alerts = snapshot.clone();
 
     // GET /api/current — current sensor + weather snapshot as JSON
     server.fn_handler("/api/current", Method::Get, move |req| -> Result<(), anyhow::Error> {
@@ -172,6 +189,43 @@ pub fn start(
             }
         }
         resp.write(b"]")?;
+        Ok(())
+    })?;
+
+    // GET /api/alerts — active weather alert summary (count + first alert fields)
+    server.fn_handler("/api/alerts", Method::Get, move |req| -> Result<(), anyhow::Error> {
+        let largest = unsafe {
+            esp_idf_sys::heap_caps_get_largest_free_block(esp_idf_sys::MALLOC_CAP_INTERNAL)
+        } as u32;
+        if largest < SRAM_ADMIT_MIN_BLOCK {
+            req.into_response(503, Some("Service Unavailable"), &[])?
+                .write(b"{\"error\":\"low memory\"}\n")?;
+            return Ok(());
+        }
+        let snap = snapshot_alerts.lock().unwrap();
+        let resp = AlertsSnap {
+            count:    snap.alert_count,
+            event:    snap.alert_event.clone(),
+            severity: snap.alert_severity.clone(),
+            headline: snap.alert_headline.clone(),
+            expires:  snap.alert_expires.clone(),
+        };
+        drop(snap);
+        let json = serde_json::to_string(&resp)?;
+        req.into_response(200, Some("OK"), CORS_HEADERS)?
+            .write(json.as_bytes())?;
+        Ok(())
+    })?;
+
+    // GET /api/silence — silence the active alert beep on the device
+    server.fn_handler("/api/silence", Method::Get, |req| -> Result<(), anyhow::Error> {
+        crate::debug_flags::request_beep_stop();
+        crate::debug_flags::REQUEST_SILENCE_WARNING.store(
+            true, std::sync::atomic::Ordering::Relaxed,
+        );
+        log::info!("HTTP /api/silence: alert silenced via web");
+        req.into_response(200, Some("OK"), CORS_HEADERS)?
+            .write(b"{\"ok\":true}")?;
         Ok(())
     })?;
 

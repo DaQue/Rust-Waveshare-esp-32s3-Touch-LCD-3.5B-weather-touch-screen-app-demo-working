@@ -42,6 +42,13 @@ svg text{font-family:system-ui,sans-serif}
 .row-title .section-title{margin:0}
 .t-btn{background:#21262d;border:1px solid #30363d;border-radius:4px;color:#7d8590;font-size:.65rem;padding:2px 8px;cursor:pointer;line-height:1.4}
 .t-btn.active{background:#1f6feb;border-color:#1f6feb;color:#e6edf3}
+.alert-banner{background:#1a0a0a;border:1px solid #f85149;border-radius:6px;padding:10px 12px;margin-bottom:8px;display:none}
+.alert-banner.active{display:block}
+.alert-title{color:#f85149;font-size:.85rem;font-weight:600;margin-bottom:3px}
+.alert-body{font-size:.75rem;color:#e6edf3;margin-bottom:4px;line-height:1.4}
+.alert-meta{font-size:.65rem;color:#7d8590}
+.silence-btn{background:#f85149;border:none;border-radius:4px;color:#fff;font-size:.72rem;padding:4px 10px;cursor:pointer;white-space:nowrap;flex-shrink:0}
+.silence-btn.silenced{background:#21262d;border:1px solid #30363d;color:#7d8590;cursor:default}
 </style>
 </head>
 <body>
@@ -62,6 +69,17 @@ svg text{font-family:system-ui,sans-serif}
 </div>
 
 <h1>ESP32 Weather &nbsp;<span id="city">—</span><button class="about-btn" onclick="openAbout()">About</button></h1>
+
+<div class="alert-banner" id="alert-banner">
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px">
+    <div style="min-width:0">
+      <div class="alert-title" id="alert-title">—</div>
+      <div class="alert-body" id="alert-headline">—</div>
+      <div class="alert-meta" id="alert-meta"></div>
+    </div>
+    <button class="silence-btn" id="silence-btn" onclick="silenceAlert()">Silence</button>
+  </div>
+</div>
 
 <div class="section-title">Outdoor</div>
 <div class="grid" id="outdoor-grid">
@@ -431,6 +449,72 @@ async function fetchHistory() {
   }
 }
 
+let alertBeepInterval = null;
+let alertSilenced = false;
+let lastAlertFingerprint = '';
+
+function beepOnce() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const g = ctx.createGain();
+    osc.connect(g); g.connect(ctx.destination);
+    osc.type = 'sine'; osc.frequency.value = 880;
+    g.gain.setValueAtTime(0.4, ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.6);
+    osc.start(); osc.stop(ctx.currentTime + 0.6);
+  } catch(e) {}
+}
+
+function startAlertBeep() {
+  if (alertBeepInterval) return;
+  beepOnce();
+  alertBeepInterval = setInterval(beepOnce, 20000);
+}
+
+function stopAlertBeep() {
+  if (alertBeepInterval) { clearInterval(alertBeepInterval); alertBeepInterval = null; }
+}
+
+async function silenceAlert() {
+  try { await fetch('/api/silence'); } catch(e) {}
+  stopAlertBeep();
+  alertSilenced = true;
+  const btn = $('silence-btn');
+  btn.textContent = 'Silenced';
+  btn.className = 'silence-btn silenced';
+  btn.disabled = true;
+}
+
+async function fetchAlerts() {
+  try {
+    const r = await fetch('/api/alerts');
+    const d = await r.json();
+    if (d.count > 0) {
+      $('alert-title').textContent = d.event || 'Weather Alert';
+      $('alert-headline').textContent = d.headline || '';
+      $('alert-meta').textContent = 'Severity: ' + (d.severity || '—') +
+        (d.expires ? '  ·  Expires: ' + d.expires : '');
+      $('alert-banner').classList.add('active');
+      $('city').style.color = '#f85149';
+      const fp = (d.event || '') + '|' + (d.expires || '');
+      if (fp !== lastAlertFingerprint) {
+        lastAlertFingerprint = fp;
+        alertSilenced = false;
+        const btn = $('silence-btn');
+        btn.textContent = 'Silence'; btn.className = 'silence-btn'; btn.disabled = false;
+      }
+      if (!alertSilenced) startAlertBeep();
+    } else {
+      $('alert-banner').classList.remove('active');
+      $('city').style.color = '';
+      stopAlertBeep();
+      alertSilenced = false;
+      lastAlertFingerprint = '';
+    }
+  } catch(e) {}
+}
+
 // Show cached data immediately; only show Loading… if nothing cached
 if (!loadCache()) {
   $('chartIndoor').innerHTML = '<text x="430" y="50%" fill="#7d8590" text-anchor="middle" dominant-baseline="middle" font-size="12">Loading…</text>';
@@ -439,10 +523,12 @@ if (!loadCache()) {
 
 fetchCurrent();
 fetchHistory();
+fetchAlerts();
 setInterval(fetchCurrent, 30000);
 setInterval(fetchHistory, 300000);
+setInterval(fetchAlerts, 30000);
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden) { fetchCurrent(); fetchHistory(); }
+  if (!document.hidden) { fetchCurrent(); fetchHistory(); fetchAlerts(); }
 });
 </script>
 </body>
