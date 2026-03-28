@@ -186,7 +186,7 @@ pub fn start(
             // Yield every 5 samples — TCP send window is ~5760 bytes; at ~60
             // bytes/sample the buffer fills fast. Frequent yields let lwIP
             // drain the window between writes, preventing EAGAIN drops.
-            if count % 5 == 0 {
+            if count.is_multiple_of(5) {
                 unsafe { esp_idf_sys::vTaskDelay(1) };
             }
         }

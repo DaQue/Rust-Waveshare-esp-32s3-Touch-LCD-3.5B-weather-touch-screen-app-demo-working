@@ -93,10 +93,10 @@ const BME280_INTERVAL_MS: u32 = 5_000;
 const HVAC_DETECT_INTERVAL_MS: u32 = 5_000;
 const HVAC_RECORD_INTERVAL_MS: u32 = 30_000;
 const PRESSURE_SAMPLE_INTERVAL_MS: u32 = pressure_history::LONG_PERIOD_SECS * 1000;
-const BME_TEMP_MIN_F: f32 = -40.0;
-const BME_TEMP_MAX_F: f32 = 185.0;
-const BME_PRESSURE_MIN_HPA: f32 = 300.0;
-const BME_PRESSURE_MAX_HPA: f32 = 1200.0;
+const BME_TEMP_MIN_F: f32 = 35.0;   // indoor — below freezing is sensor glitch
+const BME_TEMP_MAX_F: f32 = 115.0;  // indoor — above 115°F is sensor glitch
+const BME_PRESSURE_MIN_HPA: f32 = 950.0;
+const BME_PRESSURE_MAX_HPA: f32 = 1100.0;
 const BME_TEMP_MAX_STEP_F: f32 = 8.0;
 const BME_HUM_MAX_STEP: f32 = 20.0;
 const BME_PRESSURE_MAX_STEP_HPA: f32 = 12.0;
@@ -411,12 +411,15 @@ fn bme_reading_is_plausible(state: &views::AppState, reading: &bme280_sensor::Bm
         return false;
     }
     if !(BME_TEMP_MIN_F..=BME_TEMP_MAX_F).contains(&reading.temperature_f) {
+        log::warn!("BME280 temp out of range: {:.1}°F", reading.temperature_f);
         return false;
     }
     if !(0.0..=100.0).contains(&reading.humidity) {
+        log::warn!("BME280 humidity out of range: {:.1}%", reading.humidity);
         return false;
     }
     if !(BME_PRESSURE_MIN_HPA..=BME_PRESSURE_MAX_HPA).contains(&reading.pressure_hpa) {
+        log::warn!("BME280 pressure out of range: {:.0} hPa", reading.pressure_hpa);
         return false;
     }
 
