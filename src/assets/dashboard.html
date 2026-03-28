@@ -146,7 +146,7 @@ svg text{font-family:system-ui,sans-serif}
   <div id="hvac-summary" style="font-size:.85rem;color:#e6edf3;line-height:1.8">—</div>
 </div>
 
-<div class="section-title" id="press-title">24h Pressure <span id="press-trend" style="font-size:.7rem;font-weight:400;margin-left:6px"></span></div>
+<div class="section-title" id="press-title">24h Pressure <span id="press-trend" style="font-size:.7rem;font-weight:400;text-transform:none;margin-left:6px"></span></div>
 <div class="chart-wrap">
   <div class="legend">
     <div class="legend-item"><div class="legend-dot" style="background:#58a6ff"></div>Indoor hPa</div>
@@ -216,25 +216,32 @@ function pressureTrendFromHistory() {
   return null;
 }
 
+// Small SVG triangle matching device draw_temp_trend colors:
+//  up=green, steady=gray (right-pointing), down=blue for temp / red for pressure
+function triSvg(dir, downColor) {
+  const W=10, H=13;
+  if (dir > 0) return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" style="vertical-align:middle;margin-bottom:2px"><polygon points="${W/2},0 0,${H} ${W},${H}" fill="#64dc64"/></svg>`;
+  if (dir < 0) return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" style="vertical-align:middle;margin-bottom:2px"><polygon points="${W/2},${H} 0,0 ${W},0" fill="${downColor}"/></svg>`;
+  return `<svg width="${H}" height="${W}" viewBox="0 0 ${H} ${W}" style="vertical-align:middle;margin-bottom:2px"><polygon points="${H},${W/2} 0,0 0,${W}" fill="#8c8c8c"/></svg>`;
+}
+
 function updateTrends() {
-  // Outdoor temp arrow — matches device: last vs previous, 0.5°F threshold
+  // Outdoor temp triangle — matches device colors (up=green, down=blue, steady=gray)
   const tt = outdoorTempTrend();
   const te = $('temp-trend');
-  if      (tt ===  1) { te.textContent = '↑'; te.style.color = '#3fb950'; }
-  else if (tt === -1) { te.textContent = '↓'; te.style.color = '#64a0ff'; }
-  else if (tt ===  0) { te.textContent = '→'; te.style.color = '#7d8590'; }
-  else                { te.textContent = ''; }
+  if (tt !== null) te.innerHTML = triSvg(tt, '#64a0ff');
+  else             te.innerHTML = '';
 
-  // Pressure trend — 3h/1h/30m with delta and arrow
+  // Pressure trend — triangle + delta text; text-transform:none to override section-title uppercase
   const pt = pressureTrendFromHistory();
   const pe = $('press-trend');
   if (pt) {
+    const dir   = pt.delta >  0.3 ? 1 : pt.delta < -0.3 ? -1 : 0;
+    const color = dir > 0 ? '#3fb950' : dir < 0 ? '#f85149' : '#8c8c8c';
     const sign  = pt.delta >= 0 ? '+' : '';
-    const arrow = pt.delta >  0.3 ? '↑' : pt.delta < -0.3 ? '↓' : '→';
-    const color = pt.delta >  0.3 ? '#3fb950' : pt.delta < -0.3 ? '#f85149' : '#7d8590';
-    pe.innerHTML = `<span style="color:${color}">${arrow} ${sign}${pt.delta.toFixed(1)} hPa/${pt.label}</span>`;
+    pe.innerHTML = `<span style="color:${color};text-transform:none">${triSvg(dir,'#f85149')} ${sign}${pt.delta.toFixed(1)} hPa/${pt.label}</span>`;
   } else {
-    pe.textContent = '';
+    pe.innerHTML = '';
   }
 }
 
@@ -243,7 +250,7 @@ function renderAll() {
   const label = currentView === '2h' ? '2h' : '24h';
   const samples = currentView === '2h' ? allData.slice(-120) : allData;
   $('hvac-title').textContent = 'HVAC ' + label + ' Summary';
-  $('press-title').innerHTML  = label + ' Pressure <span id="press-trend" style="font-size:.7rem;font-weight:400;margin-left:6px"></span>';
+  $('press-title').innerHTML  = label + ' Pressure <span id="press-trend" style="font-size:.7rem;font-weight:400;text-transform:none;margin-left:6px"></span>';
   drawLineChart('chartIndoor', samples, 860, 150, true, allData);
   drawPressureChart('chartPress', samples, 860, 110, allData);
   renderHvacSummary(samples);
