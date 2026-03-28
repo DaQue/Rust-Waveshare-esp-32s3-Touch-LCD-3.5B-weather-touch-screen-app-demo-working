@@ -9,6 +9,8 @@ pub mod about;
 pub mod settings;
 pub mod warning;
 pub mod nav_menu;
+pub(crate) mod splash;
+pub(crate) use splash::draw_splash;
 
 use crate::config::OrientationMode;
 use crate::psbox::PsramRing;
@@ -166,6 +168,12 @@ impl AppState {
             orientation_flip: false,
             dirty: true,
         }
+    }
+
+    pub fn apply_orientation(&mut self, next: layout::Orientation) {
+        if self.orientation == next { return; }
+        self.orientation = next;
+        self.dirty = true;
     }
 
     pub fn screen_w(&self) -> i32 {
