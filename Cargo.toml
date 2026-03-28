@@ -1,6 +1,6 @@
 [package]
 name = "waveshare_esp32-s3-touch-lcd-3p5b"
-version = "0.6.35"
+version = "0.6.36"
 edition = "2021"
 
 [dependencies]

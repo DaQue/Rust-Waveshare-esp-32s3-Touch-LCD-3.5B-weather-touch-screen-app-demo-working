@@ -88,7 +88,7 @@ svg text{font-family:system-ui,sans-serif}
 <div class="grid" id="outdoor-grid">
   <div class="card accent">
     <div class="label">Temperature</div>
-    <div class="value big" id="temp">—<span class="unit">°F</span></div>
+    <div class="value big" id="temp">—<span class="unit">°F</span><span id="temp-trend" style="font-size:1rem;margin-left:6px"></span></div>
     <div class="sub" id="feels">Feels like —</div>
   </div>
   <div class="card">
@@ -146,7 +146,7 @@ svg text{font-family:system-ui,sans-serif}
   <div id="hvac-summary" style="font-size:.85rem;color:#e6edf3;line-height:1.8">—</div>
 </div>
 
-<div class="section-title" id="press-title">24h Pressure</div>
+<div class="section-title" id="press-title">24h Pressure <span id="press-trend" style="font-size:.7rem;font-weight:400;margin-left:6px"></span></div>
 <div class="chart-wrap">
   <div class="legend">
     <div class="legend-item"><div class="legend-dot" style="background:#58a6ff"></div>Indoor hPa</div>
@@ -195,15 +195,59 @@ function setView(v) {
   renderAll();
 }
 
+function outdoorTempTrend() {
+  const valid = allData.filter(s => s.otu > 0);
+  if (valid.length < 2) return null;
+  // otu encodes (temp_f + 41); diff of otu == diff of temp_f
+  const diff = valid[valid.length-1].otu - valid[valid.length-2].otu;
+  if (diff > 0.5) return 1;
+  if (diff < -0.5) return -1;
+  return 0;
+}
+
+function pressureTrendFromHistory() {
+  const valid = allData.filter(s => s.op > 0);
+  for (const [n, label] of [[180,'3h'],[60,'1h'],[30,'30m']]) {
+    if (valid.length >= n + 1) {
+      const delta = valid[valid.length-1].op/10 - valid[valid.length-1-n].op/10;
+      return { delta, label };
+    }
+  }
+  return null;
+}
+
+function updateTrends() {
+  // Outdoor temp arrow — matches device: last vs previous, 0.5°F threshold
+  const tt = outdoorTempTrend();
+  const te = $('temp-trend');
+  if      (tt ===  1) { te.textContent = '↑'; te.style.color = '#3fb950'; }
+  else if (tt === -1) { te.textContent = '↓'; te.style.color = '#64a0ff'; }
+  else if (tt ===  0) { te.textContent = '→'; te.style.color = '#7d8590'; }
+  else                { te.textContent = ''; }
+
+  // Pressure trend — 3h/1h/30m with delta and arrow
+  const pt = pressureTrendFromHistory();
+  const pe = $('press-trend');
+  if (pt) {
+    const sign  = pt.delta >= 0 ? '+' : '';
+    const arrow = pt.delta >  0.3 ? '↑' : pt.delta < -0.3 ? '↓' : '→';
+    const color = pt.delta >  0.3 ? '#3fb950' : pt.delta < -0.3 ? '#f85149' : '#7d8590';
+    pe.innerHTML = `<span style="color:${color}">${arrow} ${sign}${pt.delta.toFixed(1)} hPa/${pt.label}</span>`;
+  } else {
+    pe.textContent = '';
+  }
+}
+
 function renderAll() {
   if (!allData.length) return;
   const label = currentView === '2h' ? '2h' : '24h';
   const samples = currentView === '2h' ? allData.slice(-120) : allData;
-  $('hvac-title').textContent  = 'HVAC ' + label + ' Summary';
-  $('press-title').textContent = label + ' Pressure';
+  $('hvac-title').textContent = 'HVAC ' + label + ' Summary';
+  $('press-title').innerHTML  = label + ' Pressure <span id="press-trend" style="font-size:.7rem;font-weight:400;margin-left:6px"></span>';
   drawLineChart('chartIndoor', samples, 860, 150, true, allData);
   drawPressureChart('chartPress', samples, 860, 110, allData);
   renderHvacSummary(samples);
+  updateTrends();
 }
 
 async function fetchCurrent() {
