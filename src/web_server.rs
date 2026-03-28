@@ -12,6 +12,7 @@ fn parse_hours_from_uri(uri: &str) -> u32 {
         .and_then(|i| uri[i + 6..].split('&').next())
         .and_then(|s| s.parse::<u32>().ok())
         .unwrap_or(24)
+        .min(24)
 }
 
 /// Snapshot of current sensor + weather data served by /api/current.
