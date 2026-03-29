@@ -620,8 +620,7 @@ fn main() -> Result<()> {
                 unsafe { esp_idf_sys::vTaskDelay(1) };
                 waited += 1;
             }
-            history_nvs::history_nvs_save(&state, &nvs);
-            history_nvs::dashboard_history_nvs_save(&history, &nvs);
+            history_nvs::history_nvs_save_all(&state, &history, &nvs);
             last_nvs_save_ms = t;
         }
 
@@ -633,8 +632,7 @@ fn main() -> Result<()> {
                 unsafe { esp_idf_sys::vTaskDelay(1) };
                 waited += 1;
             }
-            history_nvs::history_nvs_save(&state, &nvs);
-            history_nvs::dashboard_history_nvs_save(&history, &nvs);
+            history_nvs::history_nvs_save_all(&state, &history, &nvs);
             last_nvs_save_ms = t; // reset periodic timer too
             log::info!("console: history save complete");
         }
@@ -642,8 +640,7 @@ fn main() -> Result<()> {
         // Proactive reboot when SRAM largest block ≤ 7 KB: save history first.
         if SRAM_DO_REBOOT.load(Ordering::Relaxed) {
             log::warn!("SRAM_DO_REBOOT: saving history to NVS then rebooting...");
-            history_nvs::history_nvs_save(&state, &nvs);
-            history_nvs::dashboard_history_nvs_save(&history, &nvs);
+            history_nvs::history_nvs_save_all(&state, &history, &nvs);
             unsafe { esp_idf_sys::esp_restart(); }
         }
 

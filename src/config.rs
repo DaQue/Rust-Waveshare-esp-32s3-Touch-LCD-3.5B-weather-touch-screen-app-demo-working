@@ -20,10 +20,20 @@ const KEY_NWS_USER_AGENT: &str = "nws_ua";
 const KEY_NWS_SCOPE: &str = "nws_scope";
 const KEY_NWS_ZONE: &str = "nws_zone";
 
-/// NVS keys for sensor history persistence across proactive reboots.
-pub const KEY_HIST_INDOOR:   &str = "hist_indoor";
-pub const KEY_HIST_PRESS:    &str = "hist_press";
-pub const KEY_HIST_DASHBOARD: &str = "hist_dash";
+/// NVS keys for sensor history persistence (ping-pong two-slot scheme).
+///
+/// Slot A uses the original key names (backward-compatible with single-slot saves).
+/// Slot B uses `_b` suffixes.  `KEY_HIST_GEN` is a u32 generation counter:
+///   gen == 0  → no ping-pong save yet; restore falls back to slot-A legacy keys
+///   gen  > 0  → last complete write was to slot (gen-1) % 2  (0=A, 1=B)
+/// Each save writes to the *opposite* slot, then bumps gen.
+pub const KEY_HIST_INDOOR:    &str = "hist_indoor";   // slot A
+pub const KEY_HIST_PRESS:     &str = "hist_press";    // slot A
+pub const KEY_HIST_DASHBOARD: &str = "hist_dash";     // slot A
+pub const KEY_HIST_INDOOR_B:  &str = "hist_indoor_b"; // slot B
+pub const KEY_HIST_PRESS_B:   &str = "hist_press_b";  // slot B
+pub const KEY_HIST_DASH_B:    &str = "hist_dash_b";   // slot B
+pub const KEY_HIST_GEN:       &str = "hist_gen";      // generation counter (u32 → 4 bytes)
 
 const DEFAULT_WIFI_SSID: &str = "";
 const DEFAULT_WIFI_PASS: &str = "";
