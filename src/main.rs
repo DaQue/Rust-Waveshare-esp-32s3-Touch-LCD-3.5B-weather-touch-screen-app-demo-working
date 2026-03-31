@@ -69,7 +69,7 @@ const PIN_I2S_MCLK: i32 = 44;
 const I2C_FREQ_HZ: u32 = 100_000;
 
 // ── Timing ──────────────────────────────────────────────────────────
-pub(crate) const WEATHER_INTERVAL_SECS: u64 = 600;
+pub(crate) const WEATHER_INTERVAL_SECS: u64 = 300;
 pub(crate) const WEATHER_RETRY_SECS: u64 = 30;
 const WEATHER_STALE_AFTER_SECS: u64 = WEATHER_INTERVAL_SECS + 120;
 pub(crate) const ALERTS_INTERVAL_SECS: u64 = 180;        // 3 min — scanning for new alerts
