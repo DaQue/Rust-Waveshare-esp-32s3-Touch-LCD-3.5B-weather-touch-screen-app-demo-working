@@ -1,5 +1,7 @@
 use anyhow::Result;
-use esp_idf_svc::sntp::{EspSntp, SntpConf, SyncMode, OperatingMode, SyncStatus};
+use esp_idf_svc::sntp::{EspSntp, OperatingMode, SntpConf, SyncMode, SyncStatus};
+// TODO: upgrade ESP-IDF from v5.2.3 to v5.3.x+ to fix lwIP tcpip_thread_handle_msg
+//       crash on periodic SNTP re-sync (EXCVADDR 0x1, ~22h uptime)
 use log::info;
 use std::thread;
 use std::time::Duration;
@@ -27,9 +29,7 @@ pub(crate) fn sync_time(tz: &str) -> Result<EspSntp<'static>> {
     };
 
     info!("Starting SNTP sync with {}", SNTP_SERVER);
-    let sntp = EspSntp::new_with_callback(&conf, |_| {
-        info!("SNTP sync callback triggered");
-    })?;
+    let sntp = EspSntp::new(&conf)?;
 
     let mut elapsed_ms = 0u32;
     while elapsed_ms < SYNC_TIMEOUT_MS {
