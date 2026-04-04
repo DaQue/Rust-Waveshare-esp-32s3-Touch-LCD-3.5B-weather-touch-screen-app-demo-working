@@ -659,45 +659,54 @@ function _xhMove(svgId, PL, W, H, chartType, evt) {
   if (!samples || !samples.length) return;
   const svg = $(svgId);
   const rect = svg.getBoundingClientRect();
-  const PR = 8, PT = 8, PB = 20;
-  const cw = W - PL - PR, ch = H - PT - PB;
+  const PR = 8;
+  const cw = W - PL - PR;
   const svgX = (evt.clientX - rect.left) * (W / rect.width);
   const frac = Math.max(0, Math.min(1, (svgX - PL) / cw));
   const idx = Math.min(Math.round(frac * (samples.length - 1)), samples.length - 1);
+
+  // Update hovered chart line
   const x = (PL + frac * cw).toFixed(1);
   const line = $(svgId + '-xh');
   if (line) { line.setAttribute('x1', x); line.setAttribute('x2', x); line.setAttribute('visibility','visible'); }
+
+  // Update other chart line at same time fraction
+  const otherId = svgId === 'chartIndoor' ? 'chartPress' : 'chartIndoor';
+  const otherPL = otherId === 'chartIndoor' ? 38 : 48;
+  const otherX = (otherPL + frac * (W - otherPL - PR)).toFixed(1);
+  const otherLine = $(otherId + '-xh');
+  if (otherLine) { otherLine.setAttribute('x1', otherX); otherLine.setAttribute('x2', otherX); otherLine.setAttribute('visibility','visible'); }
+
+  // Combined tooltip with all fields
   const s = samples[idx];
   const fmtT = ts => { const d = new Date(ts*1000); return d.getHours()+':'+(d.getMinutes()+'').padStart(2,'0'); };
-  let html = `<div style="color:#7d8590;margin-bottom:2px">${fmtT(s.ts)}</div>`;
-  if (chartType === 'indoor') {
-    html += `<div>In: <span style="color:#58a6ff">${s.tf.toFixed(1)}°F</span>  Hum: <span style="color:#3fb950">${s.h.toFixed(0)}%</span></div>`;
-    if (s.otu > 0) html += `<div>Out: <span style="color:#f0883e">${(s.otu-41).toFixed(1)}°F</span></div>`;
-    const hv = s.hv || 0;
-    html += `<div>HVAC: <span style="color:${HVAC_COLORS[hv]}">${HVAC_LABELS[hv]}</span></div>`;
-  } else {
-    html += `<div>Indoor: <span style="color:#58a6ff">${s.p.toFixed(1)} hPa</span></div>`;
-    if (s.op > 0) html += `<div>Outdoor: <span style="color:#bc8cff">${(s.op/10).toFixed(1)} hPa</span></div>`;
-  }
+  const hv = s.hv || 0;
+  let html = `<div style="color:#7d8590;margin-bottom:3px">${fmtT(s.ts)}</div>`;
+  html += `<div>In: <span style="color:#58a6ff">${s.tf.toFixed(1)}°F</span>&ensp;Hum: <span style="color:#3fb950">${s.h.toFixed(0)}%</span></div>`;
+  if (s.otu > 0) html += `<div>Out: <span style="color:#f0883e">${(s.otu-41).toFixed(1)}°F</span></div>`;
+  html += `<div>HVAC: <span style="color:${HVAC_COLORS[hv]}">${HVAC_LABELS[hv]}</span></div>`;
+  html += `<div style="border-top:1px solid #30363d;margin:3px 0"></div>`;
+  html += `<div>Indoor: <span style="color:#58a6ff">${s.p.toFixed(1)} hPa</span></div>`;
+  if (s.op > 0) html += `<div>Outdoor: <span style="color:#bc8cff">${(s.op/10).toFixed(1)} hPa</span></div>`;
+
   const tip = $('crosshair-tip');
   tip.innerHTML = html;
   tip.style.display = 'block';
-  const tipW = tip.offsetWidth || 150;
+  const tipW = tip.offsetWidth || 160;
   const left = evt.clientX + 16 + tipW > window.innerWidth ? evt.clientX - tipW - 10 : evt.clientX + 16;
   tip.style.left = left + 'px';
   tip.style.top  = (evt.clientY - 10) + 'px';
 }
 
-function _xhLeave(svgId) {
-  const line = $(svgId + '-xh');
-  if (line) line.setAttribute('visibility','hidden');
+function _xhLeave() {
+  [$('chartIndoor-xh'), $('chartPress-xh')].forEach(l => { if (l) l.setAttribute('visibility','hidden'); });
   $('crosshair-tip').style.display = 'none';
 }
 
 [['chartIndoor', 38, 860, 150, 'indoor'], ['chartPress', 48, 860, 110, 'press']].forEach(([id, PL, W, H, type]) => {
   const svg = $(id);
   svg.addEventListener('mousemove',  e => _xhMove(id, PL, W, H, type, e));
-  svg.addEventListener('mouseleave', () => _xhLeave(id));
+  svg.addEventListener('mouseleave', () => _xhLeave());
 });
 
 // Show cached data immediately; only show Loading… if nothing cached

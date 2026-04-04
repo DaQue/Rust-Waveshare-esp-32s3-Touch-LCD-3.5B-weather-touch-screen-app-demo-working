@@ -16,7 +16,7 @@ Always run `cargo fmt` before building. Build-only (no flash). Confirm clean bef
 ## Flash workflow
 1. Run build command — confirm it passes
 2. Bump `version` in `Cargo.toml`
-3. Commit (include version in message suffix, e.g. `fix: ... (v0.7.2)`)
+3. **Commit immediately** after a clean build — do not wait to be asked
 4. Offer `./scripts/flash.sh` — never flash without asking the user first
 
 `scripts/flash.sh` pipes `cargo +esp run` through `tee -a /tmp/esp_log.txt`.
