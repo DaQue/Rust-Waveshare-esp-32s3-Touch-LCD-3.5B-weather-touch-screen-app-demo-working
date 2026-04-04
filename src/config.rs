@@ -27,13 +27,13 @@ const KEY_NWS_ZONE: &str = "nws_zone";
 ///   gen == 0  → no ping-pong save yet; restore falls back to slot-A legacy keys
 ///   gen  > 0  → last complete write was to slot (gen-1) % 2  (0=A, 1=B)
 /// Each save writes to the *opposite* slot, then bumps gen.
-pub const KEY_HIST_INDOOR:    &str = "hist_indoor";   // slot A
-pub const KEY_HIST_PRESS:     &str = "hist_press";    // slot A
-pub const KEY_HIST_DASHBOARD: &str = "hist_dash";     // slot A
-pub const KEY_HIST_INDOOR_B:  &str = "hist_indoor_b"; // slot B
-pub const KEY_HIST_PRESS_B:   &str = "hist_press_b";  // slot B
-pub const KEY_HIST_DASH_B:    &str = "hist_dash_b";   // slot B
-pub const KEY_HIST_GEN:       &str = "hist_gen";      // generation counter (u32 → 4 bytes)
+pub const KEY_HIST_INDOOR: &str = "hist_indoor"; // slot A
+pub const KEY_HIST_PRESS: &str = "hist_press"; // slot A
+pub const KEY_HIST_DASHBOARD: &str = "hist_dash"; // slot A
+pub const KEY_HIST_INDOOR_B: &str = "hist_indoor_b"; // slot B
+pub const KEY_HIST_PRESS_B: &str = "hist_press_b"; // slot B
+pub const KEY_HIST_DASH_B: &str = "hist_dash_b"; // slot B
+pub const KEY_HIST_GEN: &str = "hist_gen"; // generation counter (u32 → 4 bytes)
 
 const DEFAULT_WIFI_SSID: &str = "";
 const DEFAULT_WIFI_PASS: &str = "";
@@ -45,8 +45,11 @@ const DEFAULT_ALERTS_ENABLED: bool = true;
 const DEFAULT_ALERTS_BEEP: bool = true;
 const DEFAULT_ALERTS_AUTO_SCOPE: bool = true;
 const DEFAULT_FLASH_TIME: &str = "unknown";
-const DEFAULT_NWS_USER_AGENT: &str =
-    concat!("waveshare_esp32-s3-touch-lcd-3p5b/", env!("CARGO_PKG_VERSION"), " (davideq@gmail.com)");
+const DEFAULT_NWS_USER_AGENT: &str = concat!(
+    "waveshare_esp32-s3-touch-lcd-3p5b/",
+    env!("CARGO_PKG_VERSION"),
+    " (davideq@gmail.com)"
+);
 const DEFAULT_NWS_SCOPE: &str = "area=MO";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -105,7 +108,11 @@ fn nvs_get_str(nvs: &EspNvs<NvsDefault>, key: &str) -> Option<String> {
     match nvs.get_str(key, &mut buf) {
         Ok(Some(val)) => {
             let s = val.trim_end_matches('\0').to_string();
-            if s.is_empty() { None } else { Some(s) }
+            if s.is_empty() {
+                None
+            } else {
+                Some(s)
+            }
         }
         _ => None,
     }
@@ -159,12 +166,12 @@ impl Config {
             .unwrap_or_else(|| DEFAULT_WX_API_KEY.to_string());
         info!("NVS wx_api_key = <{} chars>", weather_api_key.len());
 
-        let weather_query = nvs_get_str(nvs, KEY_WX_QUERY)
-            .unwrap_or_else(|| DEFAULT_WEATHER_QUERY.to_string());
+        let weather_query =
+            nvs_get_str(nvs, KEY_WX_QUERY).unwrap_or_else(|| DEFAULT_WEATHER_QUERY.to_string());
         info!("NVS wx_query = {:?}", weather_query);
 
-        let timezone = nvs_get_str(nvs, KEY_TIMEZONE)
-            .unwrap_or_else(|| DEFAULT_TIMEZONE.to_string());
+        let timezone =
+            nvs_get_str(nvs, KEY_TIMEZONE).unwrap_or_else(|| DEFAULT_TIMEZONE.to_string());
         info!("NVS timezone = {:?}", timezone);
 
         let use_celsius = nvs
@@ -184,8 +191,8 @@ impl Config {
             .unwrap_or(0)
             != 0;
         info!("NVS orientation_flip = {}", orientation_flip);
-        let flash_time = nvs_get_str(nvs, KEY_FLASH_TIME)
-            .unwrap_or_else(|| DEFAULT_FLASH_TIME.to_string());
+        let flash_time =
+            nvs_get_str(nvs, KEY_FLASH_TIME).unwrap_or_else(|| DEFAULT_FLASH_TIME.to_string());
         info!("NVS flash_time = {:?}", flash_time);
         let alerts_enabled = nvs
             .get_u8(KEY_ALERTS_ENABLED)
@@ -208,8 +215,8 @@ impl Config {
         let nws_user_agent = nvs_get_str(nvs, KEY_NWS_USER_AGENT)
             .unwrap_or_else(|| DEFAULT_NWS_USER_AGENT.to_string());
         info!("NVS nws_user_agent = {:?}", nws_user_agent);
-        let nws_scope = nvs_get_str(nvs, KEY_NWS_SCOPE)
-            .unwrap_or_else(|| DEFAULT_NWS_SCOPE.to_string());
+        let nws_scope =
+            nvs_get_str(nvs, KEY_NWS_SCOPE).unwrap_or_else(|| DEFAULT_NWS_SCOPE.to_string());
         info!("NVS nws_scope = {:?}", nws_scope);
         let nws_zone = nvs_get_str(nvs, KEY_NWS_ZONE).unwrap_or_default();
         info!("NVS nws_zone = {:?}", nws_zone);

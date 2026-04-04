@@ -50,7 +50,11 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
     let badge_style = MonoTextStyle::new(&PROFONT_24_POINT, title_color);
     let count = state.weather_alerts.len();
     let badge_text = if count > 1 {
-        format!("{} ({} active)", alert.kind().as_str().to_ascii_uppercase(), count)
+        format!(
+            "{} ({} active)",
+            alert.kind().as_str().to_ascii_uppercase(),
+            count
+        )
     } else {
         alert.kind().as_str().to_ascii_uppercase()
     };
@@ -81,7 +85,10 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
     let headline_style = MonoTextStyle::new(&PROFONT_12_POINT, TEXT_WARNING_BODY);
     let max_headline_chars = ((screen_w - 20) / 8) as usize; // ~8px per char at 12pt
     let headline = if alert.headline.len() > max_headline_chars {
-        format!("{}...", &alert.headline[..max_headline_chars.saturating_sub(3)])
+        format!(
+            "{}...",
+            &alert.headline[..max_headline_chars.saturating_sub(3)]
+        )
     } else {
         alert.headline.clone()
     };
@@ -177,23 +184,31 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
     ));
     if !alert.expires.is_empty() {
         all_lines.push((
-            format!("Expires: {}", crate::weather::format_alert_expiry(&alert.expires)),
+            format!(
+                "Expires: {}",
+                crate::weather::format_alert_expiry(&alert.expires)
+            ),
             true,
         ));
     }
 
     let visible_lines = (text_area_h / LINE_H_10PT) as usize;
-    let scroll = state.warning_scroll.min(all_lines.len().saturating_sub(visible_lines));
+    let scroll = state
+        .warning_scroll
+        .min(all_lines.len().saturating_sub(visible_lines));
 
-    for (i, (line, is_dim)) in all_lines.iter().skip(scroll).take(visible_lines).enumerate() {
+    for (i, (line, is_dim)) in all_lines
+        .iter()
+        .skip(scroll)
+        .take(visible_lines)
+        .enumerate()
+    {
         let y = text_top + (i as i32) * LINE_H_10PT + LINE_H_10PT;
         if line.is_empty() {
             continue;
         }
         let style = if *is_dim { dim_style } else { body_style };
-        Text::new(line, Point::new(10, y), style)
-            .draw(fb)
-            .ok();
+        Text::new(line, Point::new(10, y), style).draw(fb).ok();
     }
 
     // Scroll indicator

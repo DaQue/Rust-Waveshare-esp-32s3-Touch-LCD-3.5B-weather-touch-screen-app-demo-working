@@ -1,6 +1,6 @@
+use std::sync::atomic::{AtomicBool, Ordering};
 /// BME280 polling and NWS alert processing helpers for the main event loop.
 use std::sync::{Arc, Mutex};
-use std::sync::atomic::{AtomicBool, Ordering};
 
 use esp_idf_hal::i2c::I2cDriver;
 use log::info;
@@ -9,17 +9,12 @@ use crate::{bme280_sensor, config, debug_flags, speaker, views, weather};
 
 // ── BME280 poll ───────────────────────────────────────────────────────────────
 
+#[derive(Default)]
 pub(crate) struct BmePollState {
     pub last_ms: u32,
     pub last_init_ms: u32,
     pub reject_streak: u16,
     pub sample_tick: u32,
-}
-
-impl Default for BmePollState {
-    fn default() -> Self {
-        Self { last_ms: 0, last_init_ms: 0, reject_streak: 0, sample_tick: 0 }
-    }
 }
 
 pub(crate) fn poll_bme280(
@@ -35,7 +30,9 @@ pub(crate) fn poll_bme280(
         ps.reject_streak = 0;
     }
 
-    if t.wrapping_sub(ps.last_ms) < crate::BME280_INTERVAL_MS { return; }
+    if t.wrapping_sub(ps.last_ms) < crate::BME280_INTERVAL_MS {
+        return;
+    }
     ps.last_ms = t;
 
     if bme.is_none() && t.wrapping_sub(ps.last_init_ms) >= 30_000 {
@@ -51,21 +48,27 @@ pub(crate) fn poll_bme280(
         match sensor.read(i2c) {
             Some(reading) => {
                 let plausible = bme280_sensor::reading_is_plausible(state, &reading);
-                if !plausible { ps.reject_streak = ps.reject_streak.saturating_add(1); }
+                if !plausible {
+                    ps.reject_streak = ps.reject_streak.saturating_add(1);
+                }
                 // Accept if plausible, or force-accept after 12 rejects (~60s) to recover.
                 if !plausible && ps.reject_streak < 12 {
                     if debug_flags::is_on(&debug_flags::DEBUG_BME280) {
                         log::warn!(
                             "BME280 outlier dropped ({}): {:.1}°F {:.1}%RH {:.0}hPa",
                             ps.reject_streak,
-                            reading.temperature_f, reading.humidity, reading.pressure_hpa
+                            reading.temperature_f,
+                            reading.humidity,
+                            reading.pressure_hpa
                         );
                     }
                 } else {
                     if !plausible && debug_flags::is_on(&debug_flags::DEBUG_BME280) {
                         log::warn!(
                             "BME280 re-baselining: {:.1}°F {:.1}%RH {:.0}hPa",
-                            reading.temperature_f, reading.humidity, reading.pressure_hpa
+                            reading.temperature_f,
+                            reading.humidity,
+                            reading.pressure_hpa
                         );
                     }
                     ps.reject_streak = 0;
@@ -76,7 +79,7 @@ pub(crate) fn poll_bme280(
                             reading.temperature_f, reading.humidity, reading.pressure_hpa
                         );
                     }
-                    state.indoor_temp     = Some(reading.temperature_f);
+                    state.indoor_temp = Some(reading.temperature_f);
                     state.indoor_humidity = Some(reading.humidity);
                     state.indoor_pressure = Some(reading.pressure_hpa);
 
@@ -84,8 +87,13 @@ pub(crate) fn poll_bme280(
                         state.indoor_temp_history.push_back(reading.temperature_f);
                         state.indoor_hum_history.push_back(reading.humidity);
                         let bme_hpa = state.indoor_pressure;
-                        let owm_hpa = state.current_weather.as_ref()
-                            .and_then(|cw| if cw.pressure_hpa > 0 { Some(cw.pressure_hpa as f32) } else { None });
+                        let owm_hpa = state.current_weather.as_ref().and_then(|cw| {
+                            if cw.pressure_hpa > 0 {
+                                Some(cw.pressure_hpa as f32)
+                            } else {
+                                None
+                            }
+                        });
                         state.pressure_history.push_short(bme_hpa, owm_hpa);
                     }
                     if ps.sample_tick.is_multiple_of(36) {
@@ -102,22 +110,12 @@ pub(crate) fn poll_bme280(
 
 // ── Alert state ───────────────────────────────────────────────────────────────
 
+#[derive(Default)]
 pub(crate) struct AlertPollState {
     pub fingerprint: String,
     pub snapshot_seen: bool,
     pub last_beep_ms: Option<u32>,
     pub watch_beeps_remaining: u8,
-}
-
-impl Default for AlertPollState {
-    fn default() -> Self {
-        Self {
-            fingerprint: String::new(),
-            snapshot_seen: false,
-            last_beep_ms: None,
-            watch_beeps_remaining: 0,
-        }
-    }
 }
 
 pub(crate) fn process_alert_data(
@@ -132,12 +130,17 @@ pub(crate) fn process_alert_data(
     let beep_enabled = cfg.lock().unwrap().alerts_beep;
 
     if changed && !alerts.is_empty() {
-        for alert in &alerts { weather::log_alert_to_console(alert); }
+        for alert in &alerts {
+            weather::log_alert_to_console(alert);
+        }
     }
 
     if changed && !alerts.is_empty() && beep_enabled {
         let tone = weather::alert_tone_for(&alerts);
-        let highest_kind = alerts.first().map(|a| a.kind()).unwrap_or(weather::AlertKind::Other);
+        let highest_kind = alerts
+            .first()
+            .map(|a| a.kind())
+            .unwrap_or(weather::AlertKind::Other);
 
         match highest_kind {
             weather::AlertKind::Warning => {
@@ -149,7 +152,11 @@ pub(crate) fn process_alert_data(
                     if speaker_ready.load(Ordering::Relaxed) {
                         debug_flags::request_beep_tone(tone.request_code());
                         als.last_beep_ms = Some(crate::now_ms());
-                        info!("WARNING takeover: {} ({} active)", tone.as_str(), alerts.len());
+                        info!(
+                            "WARNING takeover: {} ({} active)",
+                            tone.as_str(),
+                            alerts.len()
+                        );
                     }
                 }
             }
@@ -164,8 +171,11 @@ pub(crate) fn process_alert_data(
             }
             _ => {
                 let now = crate::now_ms();
-                let can_beep = als.last_beep_ms
-                    .map(|ts| now.wrapping_sub(ts) >= (crate::ALERT_BEEP_COOLDOWN_SECS as u32 * 1000))
+                let can_beep = als
+                    .last_beep_ms
+                    .map(|ts| {
+                        now.wrapping_sub(ts) >= (crate::ALERT_BEEP_COOLDOWN_SECS as u32 * 1000)
+                    })
                     .unwrap_or(true);
                 if can_beep && speaker_ready.load(Ordering::Relaxed) {
                     debug_flags::request_beep_tone(tone.request_code());
@@ -220,15 +230,16 @@ pub(crate) fn tick_alert_beeps(
                 debug_flags::request_beep_tone(tone.request_code());
                 als.watch_beeps_remaining -= 1;
                 als.last_beep_ms = Some(crate::now_ms());
-                info!("watch beep repeat ({} remaining)", als.watch_beeps_remaining);
+                info!(
+                    "watch beep repeat ({} remaining)",
+                    als.watch_beeps_remaining
+                );
             }
         }
     }
 
     // Console-requested warning silence
-    if debug_flags::REQUEST_SILENCE_WARNING.swap(false, Ordering::Relaxed)
-        && state.warning_active
-    {
+    if debug_flags::REQUEST_SILENCE_WARNING.swap(false, Ordering::Relaxed) && state.warning_active {
         state.warning_active = false;
         state.warning_silenced_fingerprint = als.fingerprint.clone();
         debug_flags::request_beep_stop();

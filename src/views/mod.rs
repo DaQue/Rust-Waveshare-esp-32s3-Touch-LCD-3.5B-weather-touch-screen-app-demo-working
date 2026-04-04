@@ -1,21 +1,21 @@
-pub mod now;
-pub mod indoor;
-pub mod hvac;
-pub mod pressure_hvac;
-pub mod forecast;
-pub mod i2c_scan;
-pub mod wifi_scan;
 pub mod about;
-pub mod settings;
-pub mod warning;
+pub mod forecast;
+pub mod hvac;
+pub mod i2c_scan;
+pub mod indoor;
 pub mod nav_menu;
+pub mod now;
+pub mod pressure_hvac;
+pub mod settings;
 pub(crate) mod splash;
+pub mod warning;
+pub mod wifi_scan;
 pub(crate) use splash::draw_splash;
 
 use crate::config::OrientationMode;
-use crate::psbox::PsramRing;
 use crate::framebuffer::Framebuffer;
 use crate::layout::{self, Orientation};
+use crate::psbox::PsramRing;
 use crate::touch::Gesture;
 
 /// Views grouped by category.
@@ -53,37 +53,36 @@ impl View {
     /// Forecast is reached by tapping the preview card on Now, not by swiping.
     pub fn next(self) -> Option<View> {
         match self {
-            View::Now          => None, // SwipeLeft on home → NavMenu
-            View::Forecast     => None,
-            View::Indoor       => Some(View::Hvac),
-            View::Hvac         => Some(View::PressureHvac),
+            View::Now => None, // SwipeLeft on home → NavMenu
+            View::Forecast => None,
+            View::Indoor => Some(View::Hvac),
+            View::Hvac => Some(View::PressureHvac),
             View::PressureHvac => None,
-            View::Settings     => Some(View::About),
-            View::About        => Some(View::WifiScan),
-            View::WifiScan     => Some(View::I2cScan),
-            View::I2cScan      => None,
-            _                  => None,
+            View::Settings => Some(View::About),
+            View::About => Some(View::WifiScan),
+            View::WifiScan => Some(View::I2cScan),
+            View::I2cScan => None,
+            _ => None,
         }
     }
 
     /// Previous view within the current group, or None at the group boundary.
     pub fn prev(self) -> Option<View> {
         match self {
-            View::Forecast     => Some(View::Now),
-            View::Hvac         => Some(View::Indoor),
+            View::Forecast => Some(View::Now),
+            View::Hvac => Some(View::Indoor),
             View::PressureHvac => Some(View::Hvac),
-            View::About        => Some(View::Settings),
-            View::WifiScan     => Some(View::About),
-            View::I2cScan      => Some(View::WifiScan),
-            _                  => None,
+            View::About => Some(View::Settings),
+            View::WifiScan => Some(View::About),
+            View::I2cScan => Some(View::WifiScan),
+            _ => None,
         }
     }
-
 }
 
 /// Ring buffer sizes for indoor sensor history (temp & humidity).
-pub const INDOOR_SHORT_MAX: usize = 480;  // 2 h at 15 s intervals (every 3rd BME read)
-pub const INDOOR_LONG_MAX:  usize = 480;  // 24 h at 3 min intervals (every 36th BME read)
+pub const INDOOR_SHORT_MAX: usize = 480; // 2 h at 15 s intervals (every 3rd BME read)
+pub const INDOOR_LONG_MAX: usize = 480; // 24 h at 3 min intervals (every 36th BME read)
 
 /// Central app state shared across views.
 #[derive(Clone)]
@@ -98,7 +97,7 @@ pub struct AppState {
     pub indoor_hum_history: PsramRing,
     pub indoor_temp_hist_long: PsramRing,
     pub indoor_hum_hist_long: PsramRing,
-    pub plot_range_short: bool,      // true = 2h view, false = 24h view (Indoor + PressureHvac)
+    pub plot_range_short: bool, // true = 2h view, false = 24h view (Indoor + PressureHvac)
     pub outdoor_temp_history: PsramRing,
     pub time_text: String,
     pub status_text: String,
@@ -136,10 +135,10 @@ impl AppState {
             indoor_temp: None,
             indoor_humidity: None,
             indoor_pressure: None,
-            indoor_temp_history:   PsramRing::new(INDOOR_SHORT_MAX),
-            indoor_hum_history:    PsramRing::new(INDOOR_SHORT_MAX),
+            indoor_temp_history: PsramRing::new(INDOOR_SHORT_MAX),
+            indoor_hum_history: PsramRing::new(INDOOR_SHORT_MAX),
             indoor_temp_hist_long: PsramRing::new(INDOOR_LONG_MAX),
-            indoor_hum_hist_long:  PsramRing::new(INDOOR_LONG_MAX),
+            indoor_hum_hist_long: PsramRing::new(INDOOR_LONG_MAX),
             plot_range_short: false,
             outdoor_temp_history: PsramRing::new(12),
             time_text: String::new(),
@@ -162,7 +161,9 @@ impl AppState {
             warning_silenced_fingerprint: String::new(),
             warning_scroll: 0,
             hvac: crate::psbox::PsBox::new(crate::hvac::HvacDetector::new(5.0, 30.0)),
-            pressure_history: crate::psbox::PsBox::new(crate::pressure_history::PressureHistory::new()),
+            pressure_history: crate::psbox::PsBox::new(
+                crate::pressure_history::PressureHistory::new(),
+            ),
             orientation: Orientation::Landscape,
             orientation_mode: OrientationMode::Auto,
             orientation_flip: false,
@@ -171,7 +172,9 @@ impl AppState {
     }
 
     pub fn apply_orientation(&mut self, next: layout::Orientation) {
-        if self.orientation == next { return; }
+        if self.orientation == next {
+            return;
+        }
         self.orientation = next;
         self.dirty = true;
     }
@@ -309,7 +312,7 @@ impl AppState {
                 self.current_view = match group_tap {
                     nav_menu::NavTap::Weather => View::Now,
                     nav_menu::NavTap::Sensors => View::Indoor,
-                    nav_menu::NavTap::System  => View::Settings,
+                    nav_menu::NavTap::System => View::Settings,
                 };
                 self.dirty = true;
                 return true;
@@ -404,7 +407,11 @@ impl AppState {
 
         // ── Indoor view taps — tap graph area toggles 2h ↔ 24h ──
         if self.current_view == View::Indoor {
-            let graph_y: i16 = if self.orientation.is_portrait() { 168 } else { 88 };
+            let graph_y: i16 = if self.orientation.is_portrait() {
+                168
+            } else {
+                88
+            };
             if y >= graph_y {
                 self.plot_range_short = !self.plot_range_short;
                 self.dirty = true;
@@ -414,7 +421,11 @@ impl AppState {
 
         // ── PressureHvac view taps — tap graph area toggles 2h ↔ 24h ──
         if self.current_view == View::PressureHvac {
-            let graph_top: i16 = if self.orientation.is_landscape() { 64 } else { 84 };
+            let graph_top: i16 = if self.orientation.is_landscape() {
+                64
+            } else {
+                84
+            };
             if y >= graph_top {
                 self.plot_range_short = !self.plot_range_short;
                 self.dirty = true;
@@ -443,7 +454,7 @@ impl AppState {
                         // Auto (or anything else) defaults to Landscape.
                         self.orientation_mode = match self.orientation_mode {
                             OrientationMode::Landscape => OrientationMode::Portrait,
-                            _                          => OrientationMode::Landscape,
+                            _ => OrientationMode::Landscape,
                         };
                         self.save_orientation_pref = true;
                     }
@@ -460,16 +471,16 @@ impl AppState {
 /// Draw the current view into the framebuffer.
 pub fn draw_current_view(fb: &mut Framebuffer, state: &AppState) {
     match state.current_view {
-        View::Now        => now::draw(fb, state),
-        View::Forecast   => forecast::draw(fb, state),
-        View::Indoor     => indoor::draw(fb, state),
-        View::Hvac       => hvac::draw(fb, state),
+        View::Now => now::draw(fb, state),
+        View::Forecast => forecast::draw(fb, state),
+        View::Indoor => indoor::draw(fb, state),
+        View::Hvac => hvac::draw(fb, state),
         View::PressureHvac => pressure_hvac::draw(fb, state),
-        View::I2cScan    => i2c_scan::draw(fb, state),
-        View::WifiScan   => wifi_scan::draw(fb, state),
-        View::About      => about::draw(fb, state),
-        View::Settings   => settings::draw(fb, state),
-        View::NavMenu    => nav_menu::draw(fb, state),
-        View::Warning    => warning::draw(fb, state),
+        View::I2cScan => i2c_scan::draw(fb, state),
+        View::WifiScan => wifi_scan::draw(fb, state),
+        View::About => about::draw(fb, state),
+        View::Settings => settings::draw(fb, state),
+        View::NavMenu => nav_menu::draw(fb, state),
+        View::Warning => warning::draw(fb, state),
     }
 }

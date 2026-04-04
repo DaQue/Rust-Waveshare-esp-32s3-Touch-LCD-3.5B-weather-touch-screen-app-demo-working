@@ -8,22 +8,22 @@
 /// 10,080 samples × 24 bytes = 241,920 bytes (~236 KB) in PSRAM.
 use crate::psbox::PsBoxSlice;
 
-pub const HISTORY_CAP: usize = 10_080;   // 7 days × 24h × 60m
+pub const HISTORY_CAP: usize = 10_080; // 7 days × 24h × 60m
 pub const SAMPLE_VERSION: u8 = 3;
 
 /// One minute of indoor sensor data. Fixed at 24 bytes (repr C, aligned).
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
 pub struct HistorySample {
-    pub timestamp:    u32,      // Unix epoch seconds
-    pub temp_f:       f32,      // Indoor temperature °F
+    pub timestamp: u32,         // Unix epoch seconds
+    pub temp_f: f32,            // Indoor temperature °F
     pub humidity_pct: f32,      // Indoor relative humidity %
     pub pressure_hpa: f32,      // Indoor pressure hPa (altitude-corrected)
-    pub hvac_state:          u8,  // HvacState: 0=Idle 1=Heating 2=Cooling
-    pub outdoor_temp_u8:     u8,  // outdoor °F encoded: 0=no data, else (temp_f+41) as u8
-    pub outdoor_press_u16:   u16, // OWM sea-level pressure × 10 (e.g. 10132 = 1013.2 hPa); 0 = no data
-    pub version:      u8,         // Schema version — currently SAMPLE_VERSION
-    pub _pad:         [u8; 3],    // Padding to 24 bytes
+    pub hvac_state: u8,         // HvacState: 0=Idle 1=Heating 2=Cooling
+    pub outdoor_temp_u8: u8,    // outdoor °F encoded: 0=no data, else (temp_f+41) as u8
+    pub outdoor_press_u16: u16, // OWM sea-level pressure × 10 (e.g. 10132 = 1013.2 hPa); 0 = no data
+    pub version: u8,            // Schema version — currently SAMPLE_VERSION
+    pub _pad: [u8; 3],          // Padding to 24 bytes
 }
 
 const _: () = assert!(
@@ -34,8 +34,8 @@ const _: () = assert!(
 /// Fixed-capacity ring buffer backed by PSRAM.
 pub struct HistoryRing {
     data: PsBoxSlice<HistorySample>,
-    head: usize,   // index of oldest element
-    len:  usize,   // number of valid elements (0..=HISTORY_CAP)
+    head: usize, // index of oldest element
+    len: usize,  // number of valid elements (0..=HISTORY_CAP)
 }
 
 unsafe impl Send for HistoryRing {}
@@ -52,9 +52,13 @@ impl HistoryRing {
     }
 
     #[allow(dead_code)]
-    pub fn len(&self)      -> usize { self.len }
+    pub fn len(&self) -> usize {
+        self.len
+    }
     #[allow(dead_code)]
-    pub fn is_empty(&self) -> bool  { self.len == 0 }
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
 
     /// Push a new sample. Overwrites the oldest when full.
     pub fn push(&mut self, sample: HistorySample) {
@@ -70,17 +74,17 @@ impl HistoryRing {
     /// Iterate samples oldest-first, optionally limited to the most recent
     /// `hours` hours. Pass `hours = 0` to return all samples.
     pub fn iter_recent(&self, hours: u32) -> impl Iterator<Item = &HistorySample> {
-        let cap     = HISTORY_CAP;
-        let count   = if hours == 0 {
+        let cap = HISTORY_CAP;
+        let count = if hours == 0 {
             self.len
         } else {
             (hours as usize * 60).min(self.len)
         };
-        let start   = self.len.saturating_sub(count);
-        let offset  = (self.head + start) % cap;
+        let start = self.len.saturating_sub(count);
+        let offset = (self.head + start) % cap;
 
         HistoryIter {
-            data:    &self.data,
+            data: &self.data,
             offset,
             remaining: count,
         }
@@ -88,8 +92,8 @@ impl HistoryRing {
 }
 
 struct HistoryIter<'a> {
-    data:      &'a PsBoxSlice<HistorySample>,
-    offset:    usize,
+    data: &'a PsBoxSlice<HistorySample>,
+    offset: usize,
     remaining: usize,
 }
 

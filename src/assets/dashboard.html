@@ -51,9 +51,11 @@ svg text{font-family:system-ui,sans-serif}
 .silence-btn.silenced{background:#21262d;border:1px solid #30363d;color:#7d8590;cursor:default}
 .sound-hint{display:none;font-size:.65rem;color:#f0883e;margin-bottom:6px;cursor:pointer}
 .sound-hint:hover{color:#ffa657}
+#crosshair-tip{display:none;position:fixed;background:#1c2128;border:1px solid #30363d;border-radius:5px;padding:6px 10px;font-size:.72rem;color:#e6edf3;pointer-events:none;z-index:50;line-height:1.7;min-width:130px}
 </style>
 </head>
 <body>
+<div id="crosshair-tip"></div>
 <div class="modal-bg" id="about-modal" onclick="if(event.target===this)closeAbout()">
   <div class="modal">
     <h2>About</h2>
@@ -184,6 +186,7 @@ const HVAC_COLORS = ['#7d8590', '#f85149', '#388bfd'];
 
 let allData = [];
 let currentView = '24h';
+const _xhSamples = {};
 
 function openAbout()  { $('about-modal').classList.add('open'); }
 function closeAbout() { $('about-modal').classList.remove('open'); }
@@ -381,6 +384,14 @@ function drawLineChart(svgId, samples, W, H, showHvac, rangeData) {
     poly(tf, tmin, tmax, '#58a6ff') +
     poly(hf, hmin, hmax, '#3fb950') +
     (hasOt ? otPoly() : '');
+  const _xhl = document.createElementNS('http://www.w3.org/2000/svg','line');
+  _xhl.id = svgId+'-xh';
+  _xhl.setAttribute('stroke','#7d8590'); _xhl.setAttribute('stroke-width','1');
+  _xhl.setAttribute('stroke-dasharray','3,2');
+  _xhl.setAttribute('y1',String(PT)); _xhl.setAttribute('y2',String(PT+ch));
+  _xhl.setAttribute('visibility','hidden');
+  svg.appendChild(_xhl);
+  _xhSamples[svgId] = samples;
 }
 
 function renderHvacSummary(samples) {
@@ -493,6 +504,14 @@ function drawPressureChart(svgId, samples, W, H, rangeData) {
   flush();
 
   svg.innerHTML = yLabels + xLabels + inLine + outLine;
+  const _xhp = document.createElementNS('http://www.w3.org/2000/svg','line');
+  _xhp.id = svgId+'-xh';
+  _xhp.setAttribute('stroke','#7d8590'); _xhp.setAttribute('stroke-width','1');
+  _xhp.setAttribute('stroke-dasharray','3,2');
+  _xhp.setAttribute('y1',String(PT)); _xhp.setAttribute('y2',String(PT+ch));
+  _xhp.setAttribute('visibility','hidden');
+  svg.appendChild(_xhp);
+  _xhSamples[svgId] = samples;
 }
 
 const CACHE_KEY = 'esp32_history';
@@ -633,6 +652,53 @@ async function fetchAlerts() {
     }
   } catch(e) {}
 }
+
+// ── Crosshair ───────────────────────────────────────────────────────────────
+function _xhMove(svgId, PL, W, H, chartType, evt) {
+  const samples = _xhSamples[svgId];
+  if (!samples || !samples.length) return;
+  const svg = $(svgId);
+  const rect = svg.getBoundingClientRect();
+  const PR = 8, PT = 8, PB = 20;
+  const cw = W - PL - PR, ch = H - PT - PB;
+  const svgX = (evt.clientX - rect.left) * (W / rect.width);
+  const frac = Math.max(0, Math.min(1, (svgX - PL) / cw));
+  const idx = Math.min(Math.round(frac * (samples.length - 1)), samples.length - 1);
+  const x = (PL + frac * cw).toFixed(1);
+  const line = $(svgId + '-xh');
+  if (line) { line.setAttribute('x1', x); line.setAttribute('x2', x); line.setAttribute('visibility','visible'); }
+  const s = samples[idx];
+  const fmtT = ts => { const d = new Date(ts*1000); return d.getHours()+':'+(d.getMinutes()+'').padStart(2,'0'); };
+  let html = `<div style="color:#7d8590;margin-bottom:2px">${fmtT(s.ts)}</div>`;
+  if (chartType === 'indoor') {
+    html += `<div>In: <span style="color:#58a6ff">${s.tf.toFixed(1)}°F</span>  Hum: <span style="color:#3fb950">${s.h.toFixed(0)}%</span></div>`;
+    if (s.otu > 0) html += `<div>Out: <span style="color:#f0883e">${(s.otu-41).toFixed(1)}°F</span></div>`;
+    const hv = s.hv || 0;
+    html += `<div>HVAC: <span style="color:${HVAC_COLORS[hv]}">${HVAC_LABELS[hv]}</span></div>`;
+  } else {
+    html += `<div>Indoor: <span style="color:#58a6ff">${s.p.toFixed(1)} hPa</span></div>`;
+    if (s.op > 0) html += `<div>Outdoor: <span style="color:#bc8cff">${(s.op/10).toFixed(1)} hPa</span></div>`;
+  }
+  const tip = $('crosshair-tip');
+  tip.innerHTML = html;
+  tip.style.display = 'block';
+  const tipW = tip.offsetWidth || 150;
+  const left = evt.clientX + 16 + tipW > window.innerWidth ? evt.clientX - tipW - 10 : evt.clientX + 16;
+  tip.style.left = left + 'px';
+  tip.style.top  = (evt.clientY - 10) + 'px';
+}
+
+function _xhLeave(svgId) {
+  const line = $(svgId + '-xh');
+  if (line) line.setAttribute('visibility','hidden');
+  $('crosshair-tip').style.display = 'none';
+}
+
+[['chartIndoor', 38, 860, 150, 'indoor'], ['chartPress', 48, 860, 110, 'press']].forEach(([id, PL, W, H, type]) => {
+  const svg = $(id);
+  svg.addEventListener('mousemove',  e => _xhMove(id, PL, W, H, type, e));
+  svg.addEventListener('mouseleave', () => _xhLeave(id));
+});
 
 // Show cached data immediately; only show Loading… if nothing cached
 if (!loadCache()) {

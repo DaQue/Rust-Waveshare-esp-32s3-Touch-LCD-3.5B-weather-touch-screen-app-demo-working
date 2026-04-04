@@ -8,7 +8,8 @@ const ICON_BG: Rgb565 = Rgb565::new(0x14 >> 3, 0x19 >> 2, 0x23 >> 3);
 
 /// Draw a BMP treating ICON_BG pixels as transparent.
 fn draw_bmp_transparent(fb: &mut Framebuffer, bmp: &Bmp<Rgb565>, x: i32, y: i32) {
-    let pixels = bmp.pixels()
+    let pixels = bmp
+        .pixels()
         .filter(|p| p.1 != ICON_BG)
         .map(|p| Pixel(Point::new(x + p.0.x, y + p.0.y), p.1));
     fb.draw_iter(pixels).ok();

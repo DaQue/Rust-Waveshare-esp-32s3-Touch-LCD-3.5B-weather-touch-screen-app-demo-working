@@ -41,9 +41,17 @@ fn nvs_write_gen(nvs: &Arc<Mutex<EspNvs<esp_idf_svc::nvs::NvsDefault>>>, gen: u3
 /// Returns the (indoor_key, press_key, dash_key) for the given slot (0=A, 1=B).
 fn slot_keys(slot: u32) -> (&'static str, &'static str, &'static str) {
     if slot == 0 {
-        (config::KEY_HIST_INDOOR, config::KEY_HIST_PRESS, config::KEY_HIST_DASHBOARD)
+        (
+            config::KEY_HIST_INDOOR,
+            config::KEY_HIST_PRESS,
+            config::KEY_HIST_DASHBOARD,
+        )
     } else {
-        (config::KEY_HIST_INDOOR_B, config::KEY_HIST_PRESS_B, config::KEY_HIST_DASH_B)
+        (
+            config::KEY_HIST_INDOOR_B,
+            config::KEY_HIST_PRESS_B,
+            config::KEY_HIST_DASH_B,
+        )
     }
 }
 
@@ -57,18 +65,20 @@ pub fn history_nvs_save(
     nvs: &Arc<Mutex<EspNvs<esp_idf_svc::nvs::NvsDefault>>>,
 ) -> bool {
     let gen = nvs_read_gen(nvs);
-    let write_slot = gen % 2;          // 0=A on first write, then alternates
+    let write_slot = gen % 2; // 0=A on first write, then alternates
     let (indoor_key, press_key, _) = slot_keys(write_slot);
 
     const F: usize = core::mem::size_of::<f32>();
     const N: usize = 480;
     // 4 arrays × (8 bytes length + N × 4 bytes f32)
     let total = 4 * (8 + N * F);
-    let buf_ptr = unsafe {
-        esp_idf_sys::heap_caps_malloc(total, esp_idf_sys::MALLOC_CAP_SPIRAM) as *mut u8
-    };
+    let buf_ptr =
+        unsafe { esp_idf_sys::heap_caps_malloc(total, esp_idf_sys::MALLOC_CAP_SPIRAM) as *mut u8 };
     if buf_ptr.is_null() {
-        log::warn!("history_nvs_save: PSRAM alloc failed ({}B), skipping", total);
+        log::warn!(
+            "history_nvs_save: PSRAM alloc failed ({}B), skipping",
+            total
+        );
         return false;
     }
     let buf = unsafe {
@@ -92,19 +102,26 @@ pub fn history_nvs_save(
     }
 
     let mut off = 0usize;
-    write_deque(buf, &mut off, &state.indoor_temp_history,   N);
-    write_deque(buf, &mut off, &state.indoor_hum_history,    N);
+    write_deque(buf, &mut off, &state.indoor_temp_history, N);
+    write_deque(buf, &mut off, &state.indoor_hum_history, N);
     write_deque(buf, &mut off, &state.indoor_temp_hist_long, N);
-    write_deque(buf, &mut off, &state.indoor_hum_hist_long,  N);
+    write_deque(buf, &mut off, &state.indoor_hum_hist_long, N);
 
     let indoor_ok = if let Ok(mut nvs_guard) = nvs.lock() {
         match nvs_guard.set_raw(indoor_key, buf) {
             Ok(_) => true,
-            Err(e) => { log::warn!("NVS hist_indoor save failed: {:?}", e); false }
+            Err(e) => {
+                log::warn!("NVS hist_indoor save failed: {:?}", e);
+                false
+            }
         }
-    } else { false };
+    } else {
+        false
+    };
 
-    unsafe { esp_idf_sys::heap_caps_free(buf_ptr as *mut core::ffi::c_void); }
+    unsafe {
+        esp_idf_sys::heap_caps_free(buf_ptr as *mut core::ffi::c_void);
+    }
 
     // Pressure history
     let press_total = pressure_history::PressureHistory::serialised_size();
@@ -112,7 +129,10 @@ pub fn history_nvs_save(
         esp_idf_sys::heap_caps_malloc(press_total, esp_idf_sys::MALLOC_CAP_SPIRAM) as *mut u8
     };
     let press_ok = if pbuf_ptr.is_null() {
-        log::warn!("history_nvs_save: PSRAM alloc failed for pressure ({}B), skipping", press_total);
+        log::warn!(
+            "history_nvs_save: PSRAM alloc failed for pressure ({}B), skipping",
+            press_total
+        );
         false
     } else {
         let pbuf = unsafe {
@@ -123,20 +143,33 @@ pub fn history_nvs_save(
         let ok = if let Ok(mut nvs_guard) = nvs.lock() {
             match nvs_guard.set_raw(press_key, pbuf) {
                 Ok(_) => true,
-                Err(e) => { log::warn!("NVS hist_press save failed: {:?}", e); false }
+                Err(e) => {
+                    log::warn!("NVS hist_press save failed: {:?}", e);
+                    false
+                }
             }
-        } else { false };
-        unsafe { esp_idf_sys::heap_caps_free(pbuf_ptr as *mut core::ffi::c_void); }
+        } else {
+            false
+        };
+        unsafe {
+            esp_idf_sys::heap_caps_free(pbuf_ptr as *mut core::ffi::c_void);
+        }
         ok
     };
 
     if indoor_ok && press_ok {
         log::info!(
             "History NVS indoor+pressure written to slot {} (gen={}) ({} + {} bytes)",
-            write_slot, gen, total, press_total
+            write_slot,
+            gen,
+            total,
+            press_total
         );
     } else {
-        log::warn!("History NVS save partial (slot {}); gen NOT bumped", write_slot);
+        log::warn!(
+            "History NVS save partial (slot {}); gen NOT bumped",
+            write_slot
+        );
     }
     indoor_ok && press_ok
 }
@@ -150,19 +183,27 @@ pub fn history_nvs_restore(
     // gen==0 → no ping-pong save; try slot A (legacy single-slot keys still work)
     let read_slot = if gen == 0 { 0 } else { (gen - 1) % 2 };
     let (indoor_key, press_key, _) = slot_keys(read_slot);
-    log::info!("history_nvs_restore: gen={} → reading slot {}", gen, read_slot);
+    log::info!(
+        "history_nvs_restore: gen={} → reading slot {}",
+        gen,
+        read_slot
+    );
 
     const F: usize = core::mem::size_of::<f32>();
     const N: usize = 480;
     let total = 4 * (8 + N * F);
-    let buf_ptr = unsafe {
-        esp_idf_sys::heap_caps_malloc(total, esp_idf_sys::MALLOC_CAP_SPIRAM) as *mut u8
-    };
+    let buf_ptr =
+        unsafe { esp_idf_sys::heap_caps_malloc(total, esp_idf_sys::MALLOC_CAP_SPIRAM) as *mut u8 };
     if buf_ptr.is_null() {
-        log::warn!("history_nvs_restore: PSRAM alloc failed ({}B), skipping", total);
+        log::warn!(
+            "history_nvs_restore: PSRAM alloc failed ({}B), skipping",
+            total
+        );
         return;
     }
-    unsafe { core::ptr::write_bytes(buf_ptr, 0, total); }
+    unsafe {
+        core::ptr::write_bytes(buf_ptr, 0, total);
+    }
     let buf = unsafe { core::slice::from_raw_parts_mut(buf_ptr, total) };
 
     let loaded = if let Ok(nvs_guard) = nvs.lock() {
@@ -173,7 +214,9 @@ pub fn history_nvs_restore(
 
     if !loaded {
         log::info!("No saved indoor history found in NVS (slot {})", read_slot);
-        unsafe { esp_idf_sys::heap_caps_free(buf_ptr as *mut core::ffi::c_void); }
+        unsafe {
+            esp_idf_sys::heap_caps_free(buf_ptr as *mut core::ffi::c_void);
+        }
         return;
     }
 
@@ -189,17 +232,19 @@ pub fn history_nvs_restore(
     }
 
     let mut off = 0usize;
-    read_deque(buf, &mut off, &mut state.indoor_temp_history,   N);
-    read_deque(buf, &mut off, &mut state.indoor_hum_history,    N);
+    read_deque(buf, &mut off, &mut state.indoor_temp_history, N);
+    read_deque(buf, &mut off, &mut state.indoor_hum_history, N);
     read_deque(buf, &mut off, &mut state.indoor_temp_hist_long, N);
-    read_deque(buf, &mut off, &mut state.indoor_hum_hist_long,  N);
+    read_deque(buf, &mut off, &mut state.indoor_hum_hist_long, N);
     log::info!(
         "Restored indoor history (slot {}): {} short, {} long temp samples",
         read_slot,
         state.indoor_temp_history.len(),
         state.indoor_temp_hist_long.len()
     );
-    unsafe { esp_idf_sys::heap_caps_free(buf_ptr as *mut core::ffi::c_void); }
+    unsafe {
+        esp_idf_sys::heap_caps_free(buf_ptr as *mut core::ffi::c_void);
+    }
 
     // Restore pressure history
     let press_total = pressure_history::PressureHistory::serialised_size();
@@ -207,10 +252,15 @@ pub fn history_nvs_restore(
         esp_idf_sys::heap_caps_malloc(press_total, esp_idf_sys::MALLOC_CAP_SPIRAM) as *mut u8
     };
     if pbuf_ptr.is_null() {
-        log::warn!("history_nvs_restore: PSRAM alloc failed for pressure buf ({}B), skipping", press_total);
+        log::warn!(
+            "history_nvs_restore: PSRAM alloc failed for pressure buf ({}B), skipping",
+            press_total
+        );
         return;
     }
-    unsafe { core::ptr::write_bytes(pbuf_ptr, 0, press_total); }
+    unsafe {
+        core::ptr::write_bytes(pbuf_ptr, 0, press_total);
+    }
     let pbuf = unsafe { core::slice::from_raw_parts_mut(pbuf_ptr, press_total) };
     let press_loaded = if let Ok(nvs_guard) = nvs.lock() {
         matches!(nvs_guard.get_raw(press_key, pbuf), Ok(Some(_)))
@@ -221,7 +271,9 @@ pub fn history_nvs_restore(
         state.pressure_history.load_from_bytes(pbuf);
         log::info!("Restored pressure history from NVS (slot {})", read_slot);
     }
-    unsafe { esp_idf_sys::heap_caps_free(pbuf_ptr as *mut core::ffi::c_void); }
+    unsafe {
+        esp_idf_sys::heap_caps_free(pbuf_ptr as *mut core::ffi::c_void);
+    }
 }
 
 /// Coordinated ping-pong save: writes indoor, pressure, and dashboard history
@@ -235,12 +287,20 @@ pub fn history_nvs_save_all(
     let gen = nvs_read_gen(nvs);
     let write_slot = gen % 2;
     let indoor_ok = history_nvs_save(state, nvs);
-    let dash_ok   = dashboard_history_nvs_save_slot(history, nvs, write_slot);
+    let dash_ok = dashboard_history_nvs_save_slot(history, nvs, write_slot);
     if indoor_ok && dash_ok {
         nvs_write_gen(nvs, gen + 1);
-        log::info!("NVS ping-pong save complete: slot {} → gen {}", write_slot, gen + 1);
+        log::info!(
+            "NVS ping-pong save complete: slot {} → gen {}",
+            write_slot,
+            gen + 1
+        );
     } else {
-        log::warn!("NVS ping-pong save incomplete (indoor={} dash={}); gen NOT bumped", indoor_ok, dash_ok);
+        log::warn!(
+            "NVS ping-pong save incomplete (indoor={} dash={}); gen NOT bumped",
+            indoor_ok,
+            dash_ok
+        );
     }
 }
 
@@ -260,11 +320,13 @@ fn dashboard_history_nvs_save_slot(
     const N: usize = 1440;
     let total = 8 + N * SAMPLE_SIZE;
 
-    let buf_ptr = unsafe {
-        esp_idf_sys::heap_caps_malloc(total, esp_idf_sys::MALLOC_CAP_SPIRAM) as *mut u8
-    };
+    let buf_ptr =
+        unsafe { esp_idf_sys::heap_caps_malloc(total, esp_idf_sys::MALLOC_CAP_SPIRAM) as *mut u8 };
     if buf_ptr.is_null() {
-        log::warn!("dashboard_history_nvs_save: PSRAM alloc failed ({}B), skipping", total);
+        log::warn!(
+            "dashboard_history_nvs_save: PSRAM alloc failed ({}B), skipping",
+            total
+        );
         return false;
     }
     let buf = unsafe {
@@ -300,15 +362,26 @@ fn dashboard_history_nvs_save_slot(
                 Ok(_) => {
                     log::info!(
                         "NVS hist_dash saved {} samples ({} B) to slot {}",
-                        count, 8 + count * SAMPLE_SIZE, write_slot
+                        count,
+                        8 + count * SAMPLE_SIZE,
+                        write_slot
                     );
                     true
                 }
-                Err(e) => { log::warn!("NVS hist_dash save failed: {:?}", e); false }
+                Err(e) => {
+                    log::warn!("NVS hist_dash save failed: {:?}", e);
+                    false
+                }
             }
-        } else { false }
-    } else { true }; // nothing to write is not a failure
-    unsafe { esp_idf_sys::heap_caps_free(buf_ptr as *mut core::ffi::c_void); }
+        } else {
+            false
+        }
+    } else {
+        true
+    }; // nothing to write is not a failure
+    unsafe {
+        esp_idf_sys::heap_caps_free(buf_ptr as *mut core::ffi::c_void);
+    }
     ok
 }
 
@@ -325,14 +398,18 @@ pub fn dashboard_history_nvs_restore(
     const N: usize = 1440;
     let total = 8 + N * SAMPLE_SIZE;
 
-    let buf_ptr = unsafe {
-        esp_idf_sys::heap_caps_malloc(total, esp_idf_sys::MALLOC_CAP_SPIRAM) as *mut u8
-    };
+    let buf_ptr =
+        unsafe { esp_idf_sys::heap_caps_malloc(total, esp_idf_sys::MALLOC_CAP_SPIRAM) as *mut u8 };
     if buf_ptr.is_null() {
-        log::warn!("dashboard_history_nvs_restore: PSRAM alloc failed ({}B), skipping", total);
+        log::warn!(
+            "dashboard_history_nvs_restore: PSRAM alloc failed ({}B), skipping",
+            total
+        );
         return;
     }
-    unsafe { core::ptr::write_bytes(buf_ptr, 0, total); }
+    unsafe {
+        core::ptr::write_bytes(buf_ptr, 0, total);
+    }
     let buf = unsafe { core::slice::from_raw_parts_mut(buf_ptr, total) };
 
     let loaded = if let Ok(nvs_guard) = nvs.lock() {
@@ -342,8 +419,13 @@ pub fn dashboard_history_nvs_restore(
     };
 
     if !loaded {
-        log::info!("No saved dashboard history found in NVS (slot {})", read_slot);
-        unsafe { esp_idf_sys::heap_caps_free(buf_ptr as *mut core::ffi::c_void); }
+        log::info!(
+            "No saved dashboard history found in NVS (slot {})",
+            read_slot
+        );
+        unsafe {
+            esp_idf_sys::heap_caps_free(buf_ptr as *mut core::ffi::c_void);
+        }
         return;
     }
 
@@ -364,7 +446,13 @@ pub fn dashboard_history_nvs_restore(
                 off += SAMPLE_SIZE;
             }
         }
-        log::info!("Restored {} dashboard history samples from NVS (slot {})", cnt, read_slot);
+        log::info!(
+            "Restored {} dashboard history samples from NVS (slot {})",
+            cnt,
+            read_slot
+        );
     }
-    unsafe { esp_idf_sys::heap_caps_free(buf_ptr as *mut core::ffi::c_void); }
+    unsafe {
+        esp_idf_sys::heap_caps_free(buf_ptr as *mut core::ffi::c_void);
+    }
 }

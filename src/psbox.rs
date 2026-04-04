@@ -26,10 +26,7 @@ impl<T> PsBox<T> {
             return PsBox(std::ptr::dangling_mut::<T>());
         }
         let ptr = unsafe {
-            esp_idf_sys::heap_caps_malloc(
-                size,
-                esp_idf_sys::MALLOC_CAP_SPIRAM,
-            ) as *mut T
+            esp_idf_sys::heap_caps_malloc(size, esp_idf_sys::MALLOC_CAP_SPIRAM) as *mut T
         };
         assert!(!ptr.is_null(), "PsBox: PSRAM alloc failed (size={})", size);
         unsafe { ptr::write(ptr, val) };
@@ -101,7 +98,11 @@ impl<T: Default> PsBoxSlice<T> {
             let p = unsafe {
                 esp_idf_sys::heap_caps_malloc(byte_size, esp_idf_sys::MALLOC_CAP_SPIRAM) as *mut T
             };
-            assert!(!p.is_null(), "PsBoxSlice::new: PSRAM alloc failed (size={})", byte_size);
+            assert!(
+                !p.is_null(),
+                "PsBoxSlice::new: PSRAM alloc failed (size={})",
+                byte_size
+            );
             for i in 0..len {
                 unsafe { ptr::write(p.add(i), T::default()) };
             }
@@ -149,7 +150,11 @@ impl<T: Clone> Clone for PsBoxSlice<T> {
             let p = unsafe {
                 esp_idf_sys::heap_caps_malloc(byte_size, esp_idf_sys::MALLOC_CAP_SPIRAM) as *mut T
             };
-            assert!(!p.is_null(), "PsBoxSlice::clone: PSRAM alloc failed (size={})", byte_size);
+            assert!(
+                !p.is_null(),
+                "PsBoxSlice::clone: PSRAM alloc failed (size={})",
+                byte_size
+            );
             for i in 0..self.len {
                 unsafe { ptr::write(p.add(i), (*self.ptr.add(i)).clone()) };
             }
@@ -171,8 +176,8 @@ impl<T: Clone> Clone for PsBoxSlice<T> {
 
 pub struct PsramRing {
     data: PsBoxSlice<f32>,
-    head: usize,  // index of oldest element
-    len:  usize,  // number of valid elements
+    head: usize, // index of oldest element
+    len: usize,  // number of valid elements
 }
 
 unsafe impl Send for PsramRing {}
@@ -180,19 +185,31 @@ unsafe impl Sync for PsramRing {}
 
 impl PsramRing {
     pub fn new(capacity: usize) -> Self {
-        Self { data: PsBoxSlice::new(capacity), head: 0, len: 0 }
+        Self {
+            data: PsBoxSlice::new(capacity),
+            head: 0,
+            len: 0,
+        }
     }
 
-    fn capacity(&self) -> usize { self.data.len() }
-    pub fn len(&self)      -> usize { self.len }
+    fn capacity(&self) -> usize {
+        self.data.len()
+    }
+    pub fn len(&self) -> usize {
+        self.len
+    }
     #[allow(dead_code)]
-    pub fn is_empty(&self) -> bool  { self.len == 0 }
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
 
     /// Append a value. If the buffer is full, the oldest element is silently
     /// overwritten (equivalent to pop_front + push_back on a VecDeque).
     pub fn push_back(&mut self, v: f32) {
         let cap = self.capacity();
-        if cap == 0 { return; }
+        if cap == 0 {
+            return;
+        }
         let tail = (self.head + self.len) % cap;
         self.data[tail] = v;
         if self.len == cap {
@@ -204,7 +221,9 @@ impl PsramRing {
 
     /// Returns (oldest…mid, mid…newest) slices, mirroring VecDeque::as_slices().
     pub fn as_slices(&self) -> (&[f32], &[f32]) {
-        if self.len == 0 { return (&[], &[]); }
+        if self.len == 0 {
+            return (&[], &[]);
+        }
         let cap = self.capacity();
         if self.head + self.len <= cap {
             (&self.data[self.head..self.head + self.len], &[])
@@ -224,6 +243,10 @@ impl core::ops::Index<usize> for PsramRing {
 
 impl Clone for PsramRing {
     fn clone(&self) -> Self {
-        Self { data: self.data.clone(), head: self.head, len: self.len }
+        Self {
+            data: self.data.clone(),
+            head: self.head,
+            len: self.len,
+        }
     }
 }

@@ -1,9 +1,7 @@
 use anyhow::Result;
 use esp_idf_hal::modem::Modem;
 use esp_idf_svc::eventloop::EspSystemEventLoop;
-use esp_idf_svc::wifi::{
-    AuthMethod, BlockingWifi, ClientConfiguration, Configuration, EspWifi,
-};
+use esp_idf_svc::wifi::{AuthMethod, BlockingWifi, ClientConfiguration, Configuration, EspWifi};
 use log::info;
 
 /// WiFi connection result.
@@ -99,7 +97,9 @@ pub(crate) fn connect_wifi(
                 let elapsed_ms = (unsafe { esp_idf_sys::esp_timer_get_time() } - t0) / 1000;
                 log::warn!(
                     "WiFi connect attempt {}/5 failed after {}ms: {}",
-                    attempt, elapsed_ms, e
+                    attempt,
+                    elapsed_ms,
+                    e
                 );
                 log_wifi_diag(&format!("attempt {} FAIL", attempt));
 
@@ -149,7 +149,10 @@ pub(crate) fn reconnect_existing(
         match blocking_wifi.connect() {
             Ok(_) => {
                 let elapsed_ms = (unsafe { esp_idf_sys::esp_timer_get_time() } - t0) / 1000;
-                info!("WiFi reconnect OK on attempt {} ({}ms)", attempt, elapsed_ms);
+                info!(
+                    "WiFi reconnect OK on attempt {} ({}ms)",
+                    attempt, elapsed_ms
+                );
                 log_wifi_diag(&format!("reconnect {} OK", attempt));
                 connected = true;
                 break;
@@ -158,7 +161,9 @@ pub(crate) fn reconnect_existing(
                 let elapsed_ms = (unsafe { esp_idf_sys::esp_timer_get_time() } - t0) / 1000;
                 log::warn!(
                     "WiFi reconnect attempt {}/5 failed after {}ms: {}",
-                    attempt, elapsed_ms, e
+                    attempt,
+                    elapsed_ms,
+                    e
                 );
                 log_wifi_diag(&format!("reconnect {} FAIL", attempt));
                 if attempt < 5 {
@@ -200,7 +205,8 @@ pub(crate) fn scan_wifi(
     match blocking_wifi.scan() {
         Ok(aps) => {
             info!("WiFi scan found {} networks", aps.len());
-            let mut results: Vec<(String, i8)> = aps.iter()
+            let mut results: Vec<(String, i8)> = aps
+                .iter()
                 .map(|ap| (ap.ssid.to_string(), ap.signal_strength))
                 .collect();
             results.sort_by(|a, b| b.1.cmp(&a.1));

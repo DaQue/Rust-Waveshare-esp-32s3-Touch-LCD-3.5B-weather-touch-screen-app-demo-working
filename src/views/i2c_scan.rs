@@ -1,13 +1,13 @@
+use crate::framebuffer::Framebuffer;
+use crate::layout::*;
+use crate::views::AppState;
 use embedded_graphics::{
     mono_font::MonoTextStyle,
     prelude::*,
     primitives::{PrimitiveStyleBuilder, Rectangle},
     text::Text,
 };
-use profont::{PROFONT_14_POINT, PROFONT_12_POINT, PROFONT_10_POINT};
-use crate::framebuffer::Framebuffer;
-use crate::layout::*;
-use crate::views::AppState;
+use profont::{PROFONT_10_POINT, PROFONT_12_POINT, PROFONT_14_POINT};
 
 /// Map known I2C addresses to device names.
 fn device_name(addr: u8) -> &'static str {
@@ -38,7 +38,11 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
     // Header text
     let header_style = MonoTextStyle::new(&PROFONT_14_POINT, TEXT_HEADER);
     let count = state.i2c_devices.len();
-    let title = format!("I2C Bus  ({} device{})", count, if count == 1 { "" } else { "s" });
+    let title = format!(
+        "I2C Bus  ({} device{})",
+        count,
+        if count == 1 { "" } else { "s" }
+    );
     Text::new(&title, Point::new(14, 26), header_style)
         .draw(fb)
         .ok();
@@ -48,10 +52,14 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
     let card_h = screen_h - 56 - INFO_CARD_Y;
     draw_card(
         fb,
-        CARD_MARGIN, INFO_CARD_Y,
-        card_w, card_h,
+        CARD_MARGIN,
+        INFO_CARD_Y,
+        card_w,
+        card_h,
         CARD_RADIUS as u32,
-        CARD_FILL_I2C, CARD_BORDER_I2C, 1,
+        CARD_FILL_I2C,
+        CARD_BORDER_I2C,
+        1,
     );
 
     if state.i2c_devices.is_empty() {
@@ -76,16 +84,18 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
 
             let name = device_name(*addr);
             if !name.is_empty() {
-                Text::new(name, Point::new(90, y), name_style)
-                    .draw(fb)
-                    .ok();
+                Text::new(name, Point::new(90, y), name_style).draw(fb).ok();
             }
         }
     }
 
     // Bottom nav hint
     let bottom_style = MonoTextStyle::new(&PROFONT_10_POINT, TEXT_BOTTOM);
-    Text::new("--> WiFi Scan  |  hold = menu", Point::new(12, screen_h - 12), bottom_style)
-        .draw(fb)
-        .ok();
+    Text::new(
+        "--> WiFi Scan  |  hold = menu",
+        Point::new(12, screen_h - 12),
+        bottom_style,
+    )
+    .draw(fb)
+    .ok();
 }

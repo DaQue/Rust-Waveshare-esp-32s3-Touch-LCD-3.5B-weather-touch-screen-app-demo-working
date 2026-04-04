@@ -19,11 +19,11 @@ use crate::layout::*;
 use crate::views::AppState;
 
 // Graph colors
-const COLOR_BME: Rgb565 = rgb(120, 220, 160);  // green for local sensor
-const COLOR_OWM: Rgb565 = rgb(140, 160, 255);  // blue-purple for remote
-const COLOR_HEAT: Rgb565 = rgb(255, 140, 60);  // warm orange
-const COLOR_COOL: Rgb565 = rgb(80, 180, 255);  // cool blue
-const COLOR_WARN: Rgb565 = rgb(255, 200, 60);  // yellow for short-cycle warnings
+const COLOR_BME: Rgb565 = rgb(120, 220, 160); // green for local sensor
+const COLOR_OWM: Rgb565 = rgb(140, 160, 255); // blue-purple for remote
+const COLOR_HEAT: Rgb565 = rgb(255, 140, 60); // warm orange
+const COLOR_COOL: Rgb565 = rgb(80, 180, 255); // cool blue
+const COLOR_WARN: Rgb565 = rgb(255, 200, 60); // yellow for short-cycle warnings
 const GRAPH_GRID: Rgb565 = rgb(40, 48, 58);
 const GRAPH_BG: Rgb565 = rgb(16, 20, 28);
 
@@ -101,9 +101,14 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
     if let Some((delta, label)) = state.pressure_history.pressure_trend() {
         let sign = if delta >= 0.0 { "+" } else { "" };
         let txt = format!("{}: {}{:.1}", label, sign, delta);
-        Text::with_alignment(&txt, Point::new(trend_x, trend_y), label_style, Alignment::Right)
-            .draw(fb)
-            .ok();
+        Text::with_alignment(
+            &txt,
+            Point::new(trend_x, trend_y),
+            label_style,
+            Alignment::Right,
+        )
+        .draw(fb)
+        .ok();
     }
 
     // ── Pressure graph ──────────────────────────────────────────────
@@ -128,28 +133,32 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
     let grid_style = PrimitiveStyle::with_stroke(GRAPH_GRID, 1);
     for i in 1..4 {
         let gy = graph_top + (graph_h * i) / 4;
-        Line::new(
-            Point::new(graph_x, gy),
-            Point::new(graph_x + graph_w, gy),
-        )
-        .into_styled(grid_style)
-        .draw(fb)
-        .ok();
+        Line::new(Point::new(graph_x, gy), Point::new(graph_x + graph_w, gy))
+            .into_styled(grid_style)
+            .draw(fb)
+            .ok();
     }
 
     let phist = &state.pressure_history;
     let (bme_pts_raw, owm_pts, bme_mm, owm_mm, total_samples) = if state.plot_range_short {
-        (phist.short_bme_series(), phist.short_owm_series(),
-         phist.short_bme_min_max(), phist.short_owm_min_max(),
-         phist.short_len())
+        (
+            phist.short_bme_series(),
+            phist.short_owm_series(),
+            phist.short_bme_min_max(),
+            phist.short_owm_min_max(),
+            phist.short_len(),
+        )
     } else {
-        (phist.long_bme_series(), phist.long_owm_series(),
-         phist.long_bme_min_max(), phist.long_owm_min_max(),
-         phist.long_len())
+        (
+            phist.long_bme_series(),
+            phist.long_owm_series(),
+            phist.long_bme_min_max(),
+            phist.long_owm_min_max(),
+            phist.long_len(),
+        )
     };
 
     if total_samples >= 2 {
-
         // Normalize BME to sea-level by adding the OWM-BME offset so both lines
         // share the same Y baseline. Falls back to raw values until offset is known.
         let bme_pts: Vec<(usize, f32)> = if let Some(off) = bme_offset {
@@ -164,11 +173,19 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
             let mut hi = f32::NEG_INFINITY;
             for &(_, v) in bme_pts.iter().chain(owm_pts.iter()) {
                 if v.is_finite() {
-                    if v < lo { lo = v; }
-                    if v > hi { hi = v; }
+                    if v < lo {
+                        lo = v;
+                    }
+                    if v > hi {
+                        hi = v;
+                    }
                 }
             }
-            if lo.is_finite() && hi.is_finite() { Some((lo - 0.5, hi + 0.5)) } else { None }
+            if lo.is_finite() && hi.is_finite() {
+                Some((lo - 0.5, hi + 0.5))
+            } else {
+                None
+            }
         };
 
         if let Some((y_min, y_max)) = y_range_opt {
@@ -180,8 +197,12 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
                     fb,
                     &owm_pts,
                     total_samples,
-                    graph_x, graph_top, graph_w, graph_h,
-                    y_min, y_range,
+                    graph_x,
+                    graph_top,
+                    graph_w,
+                    graph_h,
+                    y_min,
+                    y_range,
                     COLOR_OWM,
                     1,
                 );
@@ -193,8 +214,12 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
                     fb,
                     &bme_pts,
                     total_samples,
-                    graph_x, graph_top, graph_w, graph_h,
-                    y_min, y_range,
+                    graph_x,
+                    graph_top,
+                    graph_w,
+                    graph_h,
+                    y_min,
+                    y_range,
                     COLOR_BME,
                     2,
                 );
@@ -235,7 +260,11 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
 
     // X-axis labels
     let x_label_y = graph_top + graph_h + 14;
-    let x_label = if state.plot_range_short { "-2h" } else { "-24h" };
+    let x_label = if state.plot_range_short {
+        "-2h"
+    } else {
+        "-24h"
+    };
     Text::new(x_label, Point::new(graph_x, x_label_y), label_style)
         .draw(fb)
         .ok();
@@ -285,9 +314,13 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
     draw_hline(fb, hvac_y - 2, LINE_COLOR_3);
 
     let hvac_header_style = MonoTextStyle::new(&PROFONT_14_POINT, TEXT_HEADER);
-    Text::new("HVAC 24h Summary", Point::new(14, hvac_y + 14), hvac_header_style)
-        .draw(fb)
-        .ok();
+    Text::new(
+        "HVAC 24h Summary",
+        Point::new(14, hvac_y + 14),
+        hvac_header_style,
+    )
+    .draw(fb)
+    .ok();
 
     let hvac = &state.hvac;
     if hvac.history_count() < 10 {
@@ -340,12 +373,19 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
         if h.cycles > 0 {
             let txt = format!(
                 "Heat: {}h{:02}m | {} cyc | avg {:.0}m | max {}m",
-                h.total_minutes / 60, h.total_minutes % 60,
-                h.cycles, h.avg_cycle_mins, h.longest_cycle_mins,
+                h.total_minutes / 60,
+                h.total_minutes % 60,
+                h.cycles,
+                h.avg_cycle_mins,
+                h.longest_cycle_mins,
             );
-            Text::new(&txt, Point::new(14, heat_y), heat_style).draw(fb).ok();
+            Text::new(&txt, Point::new(14, heat_y), heat_style)
+                .draw(fb)
+                .ok();
         } else {
-            Text::new("Heat: --", Point::new(14, heat_y), heat_style).draw(fb).ok();
+            Text::new("Heat: --", Point::new(14, heat_y), heat_style)
+                .draw(fb)
+                .ok();
         }
 
         // Cool line
@@ -353,12 +393,19 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
         if c.cycles > 0 {
             let txt = format!(
                 "Cool: {}h{:02}m | {} cyc | avg {:.0}m | max {}m",
-                c.total_minutes / 60, c.total_minutes % 60,
-                c.cycles, c.avg_cycle_mins, c.longest_cycle_mins,
+                c.total_minutes / 60,
+                c.total_minutes % 60,
+                c.cycles,
+                c.avg_cycle_mins,
+                c.longest_cycle_mins,
             );
-            Text::new(&txt, Point::new(14, cool_y), cool_style).draw(fb).ok();
+            Text::new(&txt, Point::new(14, cool_y), cool_style)
+                .draw(fb)
+                .ok();
         } else {
-            Text::new("Cool: --", Point::new(14, cool_y), cool_style).draw(fb).ok();
+            Text::new("Cool: --", Point::new(14, cool_y), cool_style)
+                .draw(fb)
+                .ok();
         }
 
         // Short-cycle warning (if any)
@@ -366,7 +413,9 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
         if short_total > 0 {
             let warn_y = cool_y + stat_line_h;
             let txt = format!("Short cycles (<4m): {}", short_total);
-            Text::new(&txt, Point::new(14, warn_y), warn_style).draw(fb).ok();
+            Text::new(&txt, Point::new(14, warn_y), warn_style)
+                .draw(fb)
+                .ok();
         }
     }
 
@@ -390,8 +439,12 @@ fn draw_indexed_line(
     fb: &mut Framebuffer,
     points: &[(usize, f32)],
     total: usize,
-    gx: i32, gy: i32, gw: i32, gh: i32,
-    y_min: f32, y_range: f32,
+    gx: i32,
+    gy: i32,
+    gw: i32,
+    gh: i32,
+    y_min: f32,
+    y_range: f32,
     color: Rgb565,
     stroke: u32,
 ) {

@@ -1,9 +1,9 @@
 use core::fmt;
 
 // ── Fast detection constants (5s sample rate) ───────────────────────
-const FAST_WINDOW: usize = 3;          // slope over 3 intervals = 15s of data
+const FAST_WINDOW: usize = 3; // slope over 3 intervals = 15s of data
 const FAST_BUF_SIZE: usize = FAST_WINDOW + 1; // need N+1 samples
-const FAST_CONFIRM: u8 = 6;            // min candidate_count to commit (6 = require 30s sustained slope)
+const FAST_CONFIRM: u8 = 6; // min candidate_count to commit (6 = require 30s sustained slope)
 
 // ── Slope thresholds (C/min) ────────────────────────────────────────
 const HEAT_ON_SLOPE: f32 = 0.20;
@@ -13,17 +13,21 @@ const COOL_OFF_SLOPE: f32 = -0.04;
 
 // ── History constants (30s record rate) ────────────────────────────
 const SHORT_CYCLE_MINS: u32 = 4;
-const HISTORY_SIZE: usize = 2880;      // 24h at 30s/sample
+const HISTORY_SIZE: usize = 2880; // 24h at 30s/sample
 
 // ── HvacState ───────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum HvacState { Idle, Heating, Cooling }
+pub enum HvacState {
+    Idle,
+    Heating,
+    Cooling,
+}
 
 impl fmt::Display for HvacState {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            HvacState::Idle    => write!(f, "IDLE"),
+            HvacState::Idle => write!(f, "IDLE"),
             HvacState::Heating => write!(f, "HEATING"),
             HvacState::Cooling => write!(f, "COOLING"),
         }
@@ -62,17 +66,17 @@ pub struct HvacDetector {
     fast_buf: [f32; FAST_BUF_SIZE],
     fast_idx: usize,
     fast_count: usize,
-    fast_period_mins: f32,  // detect_period_secs / 60
+    fast_period_mins: f32, // detect_period_secs / 60
 
     // Last completed run
     last_run_state: HvacState,
-    last_run_secs:  u32,
+    last_run_secs: u32,
 
     // Slow history ring
     history: [HvacState; HISTORY_SIZE],
     hist_idx: usize,
     hist_count: usize,
-    hist_period_mins: f32,  // record_period_secs / 60
+    hist_period_mins: f32, // record_period_secs / 60
 }
 
 impl HvacDetector {
@@ -117,15 +121,27 @@ impl HvacDetector {
 
         let proposed = match self.current_state {
             HvacState::Idle => {
-                if slope >= HEAT_ON_SLOPE { HvacState::Heating }
-                else if slope <= COOL_ON_SLOPE { HvacState::Cooling }
-                else { HvacState::Idle }
+                if slope >= HEAT_ON_SLOPE {
+                    HvacState::Heating
+                } else if slope <= COOL_ON_SLOPE {
+                    HvacState::Cooling
+                } else {
+                    HvacState::Idle
+                }
             }
             HvacState::Heating => {
-                if slope < HEAT_OFF_SLOPE { HvacState::Idle } else { HvacState::Heating }
+                if slope < HEAT_OFF_SLOPE {
+                    HvacState::Idle
+                } else {
+                    HvacState::Heating
+                }
             }
             HvacState::Cooling => {
-                if slope > COOL_OFF_SLOPE { HvacState::Idle } else { HvacState::Cooling }
+                if slope > COOL_OFF_SLOPE {
+                    HvacState::Idle
+                } else {
+                    HvacState::Cooling
+                }
             }
         };
 
@@ -140,7 +156,7 @@ impl HvacDetector {
                 // Record last run when transitioning from an active state to Idle
                 if proposed == HvacState::Idle && self.current_state != HvacState::Idle {
                     self.last_run_state = self.current_state;
-                    self.last_run_secs  = now_ms.wrapping_sub(self.state_start_ms) / 1000;
+                    self.last_run_secs = now_ms.wrapping_sub(self.state_start_ms) / 1000;
                 }
                 self.current_state = proposed;
                 self.state_start_ms = now_ms;
@@ -161,12 +177,14 @@ impl HvacDetector {
         }
     }
 
-    pub fn state(&self) -> HvacState { self.current_state }
+    pub fn state(&self) -> HvacState {
+        self.current_state
+    }
 
     /// Returns current state as u8: 0=Idle, 1=Heating, 2=Cooling
     pub fn state_u8(&self) -> u8 {
         match self.current_state {
-            HvacState::Idle    => 0,
+            HvacState::Idle => 0,
             HvacState::Heating => 1,
             HvacState::Cooling => 2,
         }
@@ -174,23 +192,34 @@ impl HvacDetector {
 
     /// Returns (state, duration_secs) of the last completed Heat or Cool run, if any.
     pub fn last_run(&self) -> Option<(HvacState, u32)> {
-        if self.last_run_secs == 0 { None }
-        else { Some((self.last_run_state, self.last_run_secs)) }
+        if self.last_run_secs == 0 {
+            None
+        } else {
+            Some((self.last_run_state, self.last_run_secs))
+        }
     }
 
     pub fn state_duration_secs(&self, now_ms: u32) -> u32 {
         now_ms.wrapping_sub(self.state_start_ms) / 1000
     }
 
-    pub fn history_count(&self) -> usize { self.hist_count }
+    pub fn history_count(&self) -> usize {
+        self.hist_count
+    }
 
     pub fn stats(&self) -> HvacStats {
-        if self.hist_count == 0 { return HvacStats::default(); }
+        if self.hist_count == 0 {
+            return HvacStats::default();
+        }
 
         let mut heat = HvacModeStats::default();
         let mut cool = HvacModeStats::default();
 
-        let start = if self.hist_count < HISTORY_SIZE { 0 } else { self.hist_idx };
+        let start = if self.hist_count < HISTORY_SIZE {
+            0
+        } else {
+            self.hist_idx
+        };
         let mut prev_state = HvacState::Idle;
         let mut run_len: u32 = 0;
         let mut first = true;
@@ -200,7 +229,13 @@ impl HvacDetector {
             let s = self.history[idx];
             if first || s != prev_state {
                 if !first {
-                    Self::close_run(prev_state, run_len, self.hist_period_mins, &mut heat, &mut cool);
+                    Self::close_run(
+                        prev_state,
+                        run_len,
+                        self.hist_period_mins,
+                        &mut heat,
+                        &mut cool,
+                    );
                 }
                 prev_state = s;
                 run_len = 1;
@@ -210,11 +245,21 @@ impl HvacDetector {
             }
         }
         if !first {
-            Self::close_run(prev_state, run_len, self.hist_period_mins, &mut heat, &mut cool);
+            Self::close_run(
+                prev_state,
+                run_len,
+                self.hist_period_mins,
+                &mut heat,
+                &mut cool,
+            );
         }
 
-        if heat.cycles > 0 { heat.avg_cycle_mins = heat.total_minutes as f32 / heat.cycles as f32; }
-        if cool.cycles > 0 { cool.avg_cycle_mins = cool.total_minutes as f32 / cool.cycles as f32; }
+        if heat.cycles > 0 {
+            heat.avg_cycle_mins = heat.total_minutes as f32 / heat.cycles as f32;
+        }
+        if cool.cycles > 0 {
+            cool.avg_cycle_mins = cool.total_minutes as f32 / cool.cycles as f32;
+        }
 
         HvacStats {
             heat,
@@ -224,8 +269,11 @@ impl HvacDetector {
     }
 
     fn close_run(
-        state: HvacState, run_len_samples: u32, period_mins: f32,
-        heat: &mut HvacModeStats, cool: &mut HvacModeStats,
+        state: HvacState,
+        run_len_samples: u32,
+        period_mins: f32,
+        heat: &mut HvacModeStats,
+        cool: &mut HvacModeStats,
     ) {
         let target = match state {
             HvacState::Heating => heat,
@@ -235,7 +283,11 @@ impl HvacDetector {
         let run_mins = (run_len_samples as f32 * period_mins).round() as u32;
         target.total_minutes += run_mins;
         target.cycles += 1;
-        if run_mins > target.longest_cycle_mins { target.longest_cycle_mins = run_mins; }
-        if run_mins < SHORT_CYCLE_MINS { target.short_cycles += 1; }
+        if run_mins > target.longest_cycle_mins {
+            target.longest_cycle_mins = run_mins;
+        }
+        if run_mins < SHORT_CYCLE_MINS {
+            target.short_cycles += 1;
+        }
     }
 }

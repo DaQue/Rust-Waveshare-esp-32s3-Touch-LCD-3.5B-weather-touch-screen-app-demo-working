@@ -11,9 +11,9 @@ use crate::hvac::HvacState;
 use crate::layout::*;
 use crate::views::AppState;
 
-const COLOR_HEAT: Rgb565 = rgb(255, 140, 60);   // warm orange
-const COLOR_COOL: Rgb565 = rgb(80, 180, 255);   // cool blue
-const COLOR_IDLE: Rgb565 = rgb(140, 148, 160);   // gray
+const COLOR_HEAT: Rgb565 = rgb(255, 140, 60); // warm orange
+const COLOR_COOL: Rgb565 = rgb(80, 180, 255); // cool blue
+const COLOR_IDLE: Rgb565 = rgb(140, 148, 160); // gray
 
 pub fn draw(fb: &mut Framebuffer, state: &AppState) {
     let (screen_w, screen_h) = screen_size(state.orientation);
@@ -82,7 +82,7 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
         let (run_color, run_label) = match run_state {
             HvacState::Heating => (COLOR_HEAT, "HEAT"),
             HvacState::Cooling => (COLOR_COOL, "COOL"),
-            HvacState::Idle    => (COLOR_IDLE, "IDLE"),
+            HvacState::Idle => (COLOR_IDLE, "IDLE"),
         };
         let last_style = MonoTextStyle::new(&PROFONT_14_POINT, run_color);
         let last_text = format!("Last: {} {}m {}s", run_label, run_secs / 60, run_secs % 60);
@@ -130,9 +130,13 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
                     .ok();
             }
         } else {
-            Text::new("No heating detected", Point::new(14, section_y + 18), label_style)
-                .draw(fb)
-                .ok();
+            Text::new(
+                "No heating detected",
+                Point::new(14, section_y + 18),
+                label_style,
+            )
+            .draw(fb)
+            .ok();
         }
 
         // COOL section
@@ -170,9 +174,13 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
                     .ok();
             }
         } else {
-            Text::new("No cooling detected", Point::new(14, cool_y + 18), label_style)
-                .draw(fb)
-                .ok();
+            Text::new(
+                "No cooling detected",
+                Point::new(14, cool_y + 18),
+                label_style,
+            )
+            .draw(fb)
+            .ok();
         }
 
         // History duration

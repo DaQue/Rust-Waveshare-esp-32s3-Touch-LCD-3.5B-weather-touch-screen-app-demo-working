@@ -1,3 +1,6 @@
+use crate::framebuffer::Framebuffer;
+use crate::layout::*;
+use crate::views::AppState;
 use embedded_graphics::{
     mono_font::MonoTextStyle,
     pixelcolor::Rgb565,
@@ -5,10 +8,7 @@ use embedded_graphics::{
     primitives::{PrimitiveStyleBuilder, Rectangle},
     text::Text,
 };
-use profont::{PROFONT_14_POINT, PROFONT_12_POINT, PROFONT_10_POINT};
-use crate::framebuffer::Framebuffer;
-use crate::layout::*;
-use crate::views::AppState;
+use profont::{PROFONT_10_POINT, PROFONT_12_POINT, PROFONT_14_POINT};
 
 pub fn draw(fb: &mut Framebuffer, state: &AppState) {
     let (screen_w, screen_h) = screen_size(state.orientation);
@@ -25,7 +25,11 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
     // Header text
     let header_style = MonoTextStyle::new(&PROFONT_14_POINT, TEXT_HEADER);
     let count = state.wifi_networks.len();
-    let title = format!("WiFi  ({} network{})", count, if count == 1 { "" } else { "s" });
+    let title = format!(
+        "WiFi  ({} network{})",
+        count,
+        if count == 1 { "" } else { "s" }
+    );
     Text::new(&title, Point::new(14, 26), header_style)
         .draw(fb)
         .ok();
@@ -35,15 +39,23 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
     let card_h = screen_h - 56 - INFO_CARD_Y;
     draw_card(
         fb,
-        CARD_MARGIN, INFO_CARD_Y,
-        card_w, card_h,
+        CARD_MARGIN,
+        INFO_CARD_Y,
+        card_w,
+        card_h,
         CARD_RADIUS as u32,
-        CARD_FILL_WIFI, CARD_BORDER_WIFI, 1,
+        CARD_FILL_WIFI,
+        CARD_BORDER_WIFI,
+        1,
     );
 
     if state.wifi_networks.is_empty() {
         let placeholder_style = MonoTextStyle::new(&PROFONT_12_POINT, TEXT_DETAIL);
-        let msg = if state.wifi_scan_pending { "Scanning..." } else { "No networks found" };
+        let msg = if state.wifi_scan_pending {
+            "Scanning..."
+        } else {
+            "No networks found"
+        };
         Text::new(msg, Point::new(24, 80), placeholder_style)
             .draw(fb)
             .ok();
@@ -65,8 +77,16 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
             }
 
             let is_connected = !state.wifi_ssid.is_empty() && *ssid == state.wifi_ssid;
-            let style = if is_connected { connected_style } else { normal_style };
-            let r_style = if is_connected { rssi_connected } else { rssi_normal };
+            let style = if is_connected {
+                connected_style
+            } else {
+                normal_style
+            };
+            let r_style = if is_connected {
+                rssi_connected
+            } else {
+                rssi_normal
+            };
 
             // Truncate long SSIDs
             let display_ssid = if ssid.len() > 22 {
@@ -88,7 +108,11 @@ pub fn draw(fb: &mut Framebuffer, state: &AppState) {
 
     // Bottom nav hint
     let bottom_style = MonoTextStyle::new(&PROFONT_10_POINT, TEXT_BOTTOM);
-    Text::new("--> About  <-- I2C Scan  |  hold = menu", Point::new(12, screen_h - 12), bottom_style)
-        .draw(fb)
-        .ok();
+    Text::new(
+        "--> About  <-- I2C Scan  |  hold = menu",
+        Point::new(12, screen_h - 12),
+        bottom_style,
+    )
+    .draw(fb)
+    .ok();
 }

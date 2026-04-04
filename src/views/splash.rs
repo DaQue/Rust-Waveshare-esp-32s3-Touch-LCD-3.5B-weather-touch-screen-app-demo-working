@@ -21,7 +21,8 @@ pub(crate) fn draw_splash(fb: &mut framebuffer::Framebuffer, status: &str) {
         title_style,
         Alignment::Center,
     )
-    .draw(fb).ok();
+    .draw(fb)
+    .ok();
 
     let sub_style = MonoTextStyle::new(&PROFONT_18_POINT, Rgb565::new(18, 36, 20));
     Text::with_alignment(
@@ -30,7 +31,8 @@ pub(crate) fn draw_splash(fb: &mut framebuffer::Framebuffer, status: &str) {
         sub_style,
         Alignment::Center,
     )
-    .draw(fb).ok();
+    .draw(fb)
+    .ok();
 
     let version_style = MonoTextStyle::new(&PROFONT_14_POINT, Rgb565::new(12, 28, 14));
     let version_text = format!("v{}", env!("CARGO_PKG_VERSION"));
@@ -40,7 +42,8 @@ pub(crate) fn draw_splash(fb: &mut framebuffer::Framebuffer, status: &str) {
         version_style,
         Alignment::Center,
     )
-    .draw(fb).ok();
+    .draw(fb)
+    .ok();
 
     let status_style = MonoTextStyle::new(&PROFONT_14_POINT, Rgb565::new(12, 28, 14));
     Text::with_alignment(
@@ -49,5 +52,6 @@ pub(crate) fn draw_splash(fb: &mut framebuffer::Framebuffer, status: &str) {
         status_style,
         Alignment::Center,
     )
-    .draw(fb).ok();
+    .draw(fb)
+    .ok();
 }

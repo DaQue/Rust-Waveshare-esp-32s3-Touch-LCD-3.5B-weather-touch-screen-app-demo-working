@@ -1,6 +1,6 @@
+use std::sync::atomic::Ordering;
 /// Render thread: owns framebuffer + LCD context, draws AppState on demand.
 use std::sync::{Arc, Mutex};
-use std::sync::atomic::Ordering;
 
 use embedded_graphics::prelude::OriginDimensions;
 
@@ -30,7 +30,9 @@ pub(crate) fn spawn_render_thread(
                     let s = render_slot.lock().unwrap().take();
                     match s {
                         Some(s) => break s,
-                        None => { unsafe { esp_idf_sys::vTaskDelay(1) }; }
+                        None => {
+                            unsafe { esp_idf_sys::vTaskDelay(1) };
+                        }
                     }
                 };
                 // Only reallocate framebuffer when the logical pixel dimensions
@@ -40,14 +42,17 @@ pub(crate) fn spawn_render_thread(
                 if snapshot.orientation != current_orientation {
                     log::info!(
                         "orientation change: {:?} -> {:?}",
-                        current_orientation, snapshot.orientation
+                        current_orientation,
+                        snapshot.orientation
                     );
                     let (w, h) = layout::framebuffer_dims(snapshot.orientation);
                     let sz = fb.size();
                     if w != sz.width || h != sz.height {
                         // Guard: only reallocate if there is enough DMA-capable SRAM.
                         let dma_free = unsafe {
-                            esp_idf_sys::heap_caps_get_largest_free_block(esp_idf_sys::MALLOC_CAP_DMA)
+                            esp_idf_sys::heap_caps_get_largest_free_block(
+                                esp_idf_sys::MALLOC_CAP_DMA,
+                            )
                         };
                         if dma_free >= 13_000 {
                             fb = framebuffer::Framebuffer::new(w, h);

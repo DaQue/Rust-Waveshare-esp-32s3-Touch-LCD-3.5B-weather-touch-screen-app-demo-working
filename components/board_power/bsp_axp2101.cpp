@@ -327,9 +327,7 @@ extern "C" esp_err_t bsp_axp2101_init(void)
                                                                              //  XPOWERS_AXP2101_PKEY_NEGATIVE_IRQ | XPOWERS_AXP2101_PKEY_POSITIVE_IRQ   |   //POWER KEY
     );
 
-    // No LiPo battery: disable charger entirely so the AXP2101 charge safety
-    // timer never fires. Also disable button-battery charge (no coin cell).
-    power.disableCharge();
+    // No LiPo battery: disable button-battery charge (no coin cell fitted).
     power.disableButtonBatteryCharge();
 
     // AXP2101 internal WDT disabled: we never call clrWatchdog() so it would

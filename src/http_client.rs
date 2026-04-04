@@ -1,9 +1,9 @@
 use anyhow::{bail, Result};
-use esp_idf_svc::http::client::{Configuration, EspHttpConnection};
 use embedded_svc::http::Method;
+use esp_idf_svc::http::client::{Configuration, EspHttpConnection};
 use log::info;
-use std::sync::{Mutex, OnceLock};
 use std::sync::atomic::Ordering;
+use std::sync::{Mutex, OnceLock};
 
 const TIMEOUT_MS: u64 = 15_000;
 const MAX_RESPONSE_SIZE: usize = 32_768;
@@ -38,8 +38,8 @@ static BODY_BUF: OnceLock<Mutex<PsramBuf>> = OnceLock::new();
 struct HttpConn(EspHttpConnection);
 unsafe impl Send for HttpConn {}
 
-static SESSION_OWM:  OnceLock<Mutex<Option<HttpConn>>> = OnceLock::new();
-static SESSION_NWS:  OnceLock<Mutex<Option<HttpConn>>> = OnceLock::new();
+static SESSION_OWM: OnceLock<Mutex<Option<HttpConn>>> = OnceLock::new();
+static SESSION_NWS: OnceLock<Mutex<Option<HttpConn>>> = OnceLock::new();
 static SESSION_MISC: OnceLock<Mutex<Option<HttpConn>>> = OnceLock::new();
 
 fn get_session(url: &str) -> &'static Mutex<Option<HttpConn>> {
@@ -69,10 +69,8 @@ unsafe impl Send for PsramBuf {}
 impl PsramBuf {
     fn new() -> Self {
         let ptr = unsafe {
-            esp_idf_sys::heap_caps_malloc(
-                MAX_RESPONSE_SIZE,
-                esp_idf_sys::MALLOC_CAP_SPIRAM,
-            ) as *mut u8
+            esp_idf_sys::heap_caps_malloc(MAX_RESPONSE_SIZE, esp_idf_sys::MALLOC_CAP_SPIRAM)
+                as *mut u8
         };
         assert!(
             !ptr.is_null(),
@@ -175,12 +173,10 @@ fn do_fetch(
 /// (EspHttpConnection, chunk[1024]) is fully popped before the
 /// caller's parse callback runs.
 fn http_fetch_into(url: &str, headers: &[(&str, &str)], buf: &mut PsramBuf) -> Result<()> {
-    let free_internal = unsafe {
-        esp_idf_sys::heap_caps_get_free_size(esp_idf_sys::MALLOC_CAP_INTERNAL)
-    };
-    let largest_block = unsafe {
-        esp_idf_sys::heap_caps_get_largest_free_block(esp_idf_sys::MALLOC_CAP_INTERNAL)
-    };
+    let free_internal =
+        unsafe { esp_idf_sys::heap_caps_get_free_size(esp_idf_sys::MALLOC_CAP_INTERNAL) };
+    let largest_block =
+        unsafe { esp_idf_sys::heap_caps_get_largest_free_block(esp_idf_sys::MALLOC_CAP_INTERNAL) };
     let uptime_secs = unsafe { esp_idf_sys::esp_timer_get_time() } / 1_000_000;
     let h = uptime_secs / 3600;
     let m = (uptime_secs % 3600) / 60;
@@ -189,7 +185,9 @@ fn http_fetch_into(url: &str, headers: &[(&str, &str)], buf: &mut PsramBuf) -> R
         "HTTP fetch: internal SRAM free = {} KB, largest block = {} KB, uptime = {}h {}m {}s",
         free_internal / 1024,
         largest_block / 1024,
-        h, m, s
+        h,
+        m,
+        s
     );
     // SRAM watch: graduated response to consecutive fetches below 12 KB.
     //   1–2 hits : warn, track streak
@@ -199,7 +197,8 @@ fn http_fetch_into(url: &str, headers: &[(&str, &str)], buf: &mut PsramBuf) -> R
         let streak = crate::SRAM_LOW_STREAK.fetch_add(1, Ordering::Relaxed) + 1;
         log::warn!(
             "SRAM < 12 KB ({} KB) — low SRAM streak {}",
-            largest_block / 1024, streak
+            largest_block / 1024,
+            streak
         );
         if streak >= 3 {
             log::error!(

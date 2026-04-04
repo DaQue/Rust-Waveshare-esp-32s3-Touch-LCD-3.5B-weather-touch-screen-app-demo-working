@@ -13,3 +13,4 @@ borg-nightly.sh
 .worktrees/
 PROJECT_CONTEXT.md
 log.txt
+.build_count

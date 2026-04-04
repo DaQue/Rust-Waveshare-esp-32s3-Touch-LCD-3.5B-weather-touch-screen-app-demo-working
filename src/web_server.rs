@@ -20,46 +20,46 @@ fn parse_hours_from_uri(uri: &str) -> u32 {
 #[derive(Serialize, Clone, Default)]
 pub struct WebSnapshot {
     // Outdoor weather (None = not yet received)
-    pub temp_f:       Option<f32>,
-    pub feels_f:      Option<f32>,
-    pub wind_mph:     Option<f32>,
-    pub humidity:     Option<i32>,
-    pub condition:    Option<String>,
-    pub city:         Option<String>,
+    pub temp_f: Option<f32>,
+    pub feels_f: Option<f32>,
+    pub wind_mph: Option<f32>,
+    pub humidity: Option<i32>,
+    pub condition: Option<String>,
+    pub city: Option<String>,
     // Indoor sensor
-    pub indoor_temp_f:       Option<f32>,
+    pub indoor_temp_f: Option<f32>,
     pub indoor_humidity_pct: Option<f32>,
     pub indoor_pressure_hpa: Option<f32>,
     // System
-    pub uptime_s:   u32,
-    pub firmware:   String,
+    pub uptime_s: u32,
+    pub firmware: String,
     pub ip_address: String,
     // HVAC summary
-    pub hvac_heat_mins:   u32,
-    pub hvac_cool_mins:   u32,
+    pub hvac_heat_mins: u32,
+    pub hvac_cool_mins: u32,
     pub hvac_heat_cycles: u32,
     pub hvac_cool_cycles: u32,
-    pub hvac_state:       u8,   // 0=Idle 1=Heating 2=Cooling
+    pub hvac_state: u8, // 0=Idle 1=Heating 2=Cooling
     // System memory
-    pub free_heap_kb:     u32,  // PSRAM free (KB)
-    pub sram_block_kb:    u32,  // Largest free internal SRAM block (KB)
+    pub free_heap_kb: u32,  // PSRAM free (KB)
+    pub sram_block_kb: u32, // Largest free internal SRAM block (KB)
     // Active weather alerts (first alert only)
     pub warning_active: bool,
-    pub alert_count:    u32,
-    pub alert_event:    String,
+    pub alert_count: u32,
+    pub alert_event: String,
     pub alert_severity: String,
     pub alert_headline: String,
-    pub alert_expires:  String,
+    pub alert_expires: String,
 }
 
 #[derive(Serialize)]
 struct AlertsSnap {
-    count:          u32,
+    count: u32,
     warning_active: bool,
-    event:          String,
-    severity:       String,
-    headline:       String,
-    expires:        String,
+    event: String,
+    severity: String,
+    headline: String,
+    expires: String,
 }
 
 const CORS_HEADERS: &[(&str, &str)] = &[
@@ -117,34 +117,46 @@ pub fn start(
     })?;
 
     // GET /favicon.ico — return 204 No Content to stop browser 404 spam
-    server.fn_handler("/favicon.ico", Method::Get, |req| -> Result<(), anyhow::Error> {
-        req.into_response(204, Some("No Content"), &[])?.write(b"")?;
-        Ok(())
-    })?;
+    server.fn_handler(
+        "/favicon.ico",
+        Method::Get,
+        |req| -> Result<(), anyhow::Error> {
+            req.into_response(204, Some("No Content"), &[])?
+                .write(b"")?;
+            Ok(())
+        },
+    )?;
 
     let snapshot_alerts = snapshot.clone();
 
     // GET /api/current — current sensor + weather snapshot as JSON
-    server.fn_handler("/api/current", Method::Get, move |req| -> Result<(), anyhow::Error> {
-        let largest = unsafe {
-            esp_idf_sys::heap_caps_get_largest_free_block(esp_idf_sys::MALLOC_CAP_INTERNAL)
-        } as u32;
+    server.fn_handler(
+        "/api/current",
+        Method::Get,
+        move |req| -> Result<(), anyhow::Error> {
+            let largest = unsafe {
+                esp_idf_sys::heap_caps_get_largest_free_block(esp_idf_sys::MALLOC_CAP_INTERNAL)
+            } as u32;
 
-        if largest < SRAM_ADMIT_MIN_BLOCK {
-            log::warn!("HTTP /api/current: admission control — largest block {} KB < {} KB",
-                largest / 1024, SRAM_ADMIT_MIN_BLOCK / 1024);
-            req.into_response(503, Some("Service Unavailable"), &[])?
-                .write(b"{\"error\":\"low memory\"}\n")?;
-            return Ok(());
-        }
+            if largest < SRAM_ADMIT_MIN_BLOCK {
+                log::warn!(
+                    "HTTP /api/current: admission control — largest block {} KB < {} KB",
+                    largest / 1024,
+                    SRAM_ADMIT_MIN_BLOCK / 1024
+                );
+                req.into_response(503, Some("Service Unavailable"), &[])?
+                    .write(b"{\"error\":\"low memory\"}\n")?;
+                return Ok(());
+            }
 
-        let data = snapshot.lock().unwrap().clone();
-        let json = serde_json::to_string(&data)?;
+            let data = snapshot.lock().unwrap().clone();
+            let json = serde_json::to_string(&data)?;
 
-        req.into_response(200, Some("OK"), CORS_HEADERS)?
-            .write(json.as_bytes())?;
-        Ok(())
-    })?;
+            req.into_response(200, Some("OK"), CORS_HEADERS)?
+                .write(json.as_bytes())?;
+            Ok(())
+        },
+    )?;
 
     // GET /api/history?hours=N — dashboard history ring as JSON array.
     // Streams samples oldest-first using a per-sample heapless stack buffer
@@ -196,42 +208,49 @@ pub fn start(
     })?;
 
     // GET /api/alerts — active weather alert summary (count + first alert fields)
-    server.fn_handler("/api/alerts", Method::Get, move |req| -> Result<(), anyhow::Error> {
-        let largest = unsafe {
-            esp_idf_sys::heap_caps_get_largest_free_block(esp_idf_sys::MALLOC_CAP_INTERNAL)
-        } as u32;
-        if largest < SRAM_ADMIT_MIN_BLOCK {
-            req.into_response(503, Some("Service Unavailable"), &[])?
-                .write(b"{\"error\":\"low memory\"}\n")?;
-            return Ok(());
-        }
-        let snap = snapshot_alerts.lock().unwrap();
-        let resp = AlertsSnap {
-            count:          snap.alert_count,
-            warning_active: snap.warning_active,
-            event:          snap.alert_event.clone(),
-            severity:       snap.alert_severity.clone(),
-            headline:       snap.alert_headline.clone(),
-            expires:        snap.alert_expires.clone(),
-        };
-        drop(snap);
-        let json = serde_json::to_string(&resp)?;
-        req.into_response(200, Some("OK"), CORS_HEADERS)?
-            .write(json.as_bytes())?;
-        Ok(())
-    })?;
+    server.fn_handler(
+        "/api/alerts",
+        Method::Get,
+        move |req| -> Result<(), anyhow::Error> {
+            let largest = unsafe {
+                esp_idf_sys::heap_caps_get_largest_free_block(esp_idf_sys::MALLOC_CAP_INTERNAL)
+            } as u32;
+            if largest < SRAM_ADMIT_MIN_BLOCK {
+                req.into_response(503, Some("Service Unavailable"), &[])?
+                    .write(b"{\"error\":\"low memory\"}\n")?;
+                return Ok(());
+            }
+            let snap = snapshot_alerts.lock().unwrap();
+            let resp = AlertsSnap {
+                count: snap.alert_count,
+                warning_active: snap.warning_active,
+                event: snap.alert_event.clone(),
+                severity: snap.alert_severity.clone(),
+                headline: snap.alert_headline.clone(),
+                expires: snap.alert_expires.clone(),
+            };
+            drop(snap);
+            let json = serde_json::to_string(&resp)?;
+            req.into_response(200, Some("OK"), CORS_HEADERS)?
+                .write(json.as_bytes())?;
+            Ok(())
+        },
+    )?;
 
     // GET /api/silence — silence the active alert beep on the device
-    server.fn_handler("/api/silence", Method::Get, |req| -> Result<(), anyhow::Error> {
-        crate::debug_flags::request_beep_stop();
-        crate::debug_flags::REQUEST_SILENCE_WARNING.store(
-            true, std::sync::atomic::Ordering::Relaxed,
-        );
-        log::info!("HTTP /api/silence: alert silenced via web");
-        req.into_response(200, Some("OK"), CORS_HEADERS)?
-            .write(b"{\"ok\":true}")?;
-        Ok(())
-    })?;
+    server.fn_handler(
+        "/api/silence",
+        Method::Get,
+        |req| -> Result<(), anyhow::Error> {
+            crate::debug_flags::request_beep_stop();
+            crate::debug_flags::REQUEST_SILENCE_WARNING
+                .store(true, std::sync::atomic::Ordering::Relaxed);
+            log::info!("HTTP /api/silence: alert silenced via web");
+            req.into_response(200, Some("OK"), CORS_HEADERS)?
+                .write(b"{\"ok\":true}")?;
+            Ok(())
+        },
+    )?;
 
     log::info!("HTTP server started (port 80, task stack 16 KB)");
     Ok(server)
